@@ -4979,7 +4979,7 @@ export class PrismDaemon {
   _getInlineDiffCleanupExpression() {
     return (
       this.cdp?.INLINE_DIFF_REMOVE_EXPRESSION ||
-      "(() => { try { window.__agPrismInlineDiff?.destroy?.(); } catch {} try { document.getElementById('ag-prism-inline-diff-css')?.remove(); } catch {} try { document.querySelectorAll('.ag-cs-inline-diff-box, .ag-cs-diff-ctx-menu').forEach((n) => n.remove()); } catch {} try { delete window.__agPrismInlineDiff; } catch {} try { delete globalThis.__agPrismInlineDiff; } catch {} try { delete window.__agPrismInlineDiffFactory; } catch {} try { delete globalThis.__agPrismInlineDiffFactory; } catch {} try { delete window.__agPrismInlineDiffResolve; } catch {} return { ok: true, status: 'off' }; })()"
+      "(() => { try { window.__agPrismInlineDiff?.destroy?.(); } catch {} try { document.getElementById('ag-prism-inline-diff-css')?.remove(); } catch {} try { document.querySelectorAll('.ag-cs-inline-diff-box, .ag-cs-diff-ctx-menu, .ag-cs-conv-find').forEach((n) => n.remove()); } catch {} try { document.querySelectorAll('[data-ag-find-sonar]').forEach((n) => n.removeAttribute('data-ag-find-sonar')); } catch {} try { if (typeof CSS !== 'undefined' && CSS?.highlights?.delete) { CSS.highlights.delete('ag-find-match'); CSS.highlights.delete('ag-find-active'); } } catch {} try { delete window.__agPrismInlineDiff; } catch {} try { delete globalThis.__agPrismInlineDiff; } catch {} try { delete window.__agPrismInlineDiffFactory; } catch {} try { delete globalThis.__agPrismInlineDiffFactory; } catch {} try { delete window.__agPrismInlineDiffResolve; } catch {} return { ok: true, status: 'off' }; })()"
     );
   }
 

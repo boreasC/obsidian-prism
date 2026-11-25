@@ -24,6 +24,10 @@
     '@keyframes ag-cs-diff-fold{from{opacity:1;transform:translate3d(0,0,0) scaleY(1);}to{opacity:0;transform:translate3d(0,-4px,0) scaleY(.97);}}',
     '@keyframes ag-cs-diff-pulse{0%,100%{opacity:.45;}50%{opacity:.95;}}',
     '@keyframes ag-cs-diff-in{from{opacity:0;transform:translate3d(0,-3px,0);}to{opacity:1;transform:translate3d(0,0,0);}}',
+    '@keyframes ag-cs-find-sonar{0%{box-shadow:0 0 0 0 rgba(92,198,252,0);}24%{box-shadow:0 0 0 1.5px rgba(92,198,252,.58),0 0 20px -2px rgba(92,198,252,.28);}100%{box-shadow:0 0 0 1.5px transparent,0 0 24px 0 transparent;}}',
+    '@keyframes ag-cs-find-sonar-light{0%{box-shadow:0 0 0 0 rgba(37,99,235,0);}24%{box-shadow:0 0 0 1.5px rgba(37,99,235,.55),0 4px 18px rgba(37,99,235,.22);}100%{box-shadow:0 0 0 1.5px transparent,0 4px 22px rgba(37,99,235,0);}}',
+    ':root::highlight(ag-find-match){background-color:rgba(250,204,21,.28);color:inherit;}',
+    ':root::highlight(ag-find-active){background-color:rgba(251,146,60,.68);color:#111827;}',
     'html[data-ag-cs-style]{',
     '& .ag-cs-inline-diff-body{&::-webkit-scrollbar{width:4px;height:4px;display:block;}&::-webkit-scrollbar-track{background:transparent;}&::-webkit-scrollbar-thumb{background:transparent;border-radius:999px;}&:hover::-webkit-scrollbar-thumb{background:var(--_s8,rgba(255,255,255,.18));&:hover{background:var(--_s9,rgba(255,255,255,.32));}}}',
     '& [data-testid="autoscroll-viewport"] .bleed-contain .ag-cs-inline-diff-body{margin-right:14px !important;padding-right:8px !important;overscroll-behavior-y:auto !important;}',
@@ -46,6 +50,14 @@
     '& .ag-cs-inline-diff-empty{padding:10px 16px;font-family:var(--font-sans);font-size:12px;line-height:1.5;color:var(--muted-foreground);}',
     '& .ag-cs-diff-ctx-menu{position:fixed;z-index:9999;min-width:184px;padding:4px;border-radius:10px;background-color:rgba(14,16,22,.96);background-image:linear-gradient(rgba(164,196,255,.05) 0%,transparent 44%);backdrop-filter:blur(16px) saturate(140%);border:1px solid rgba(214,226,255,.12);box-shadow:inset 0 1px 0 rgba(232,240,255,.12),0 18px 40px -10px rgba(0,0,0,.64);display:flex;flex-direction:column;gap:2px;animation:ag-cs-diff-in 110ms var(--ag-ease-out,ease-out);}',
     '& .ag-cs-diff-ctx-item{appearance:none;width:100%;height:28px;padding:0 9px;border:0;border-radius:7px;background:transparent;color:var(--secondary-foreground);font-family:var(--font-sans);font-size:12px;font-weight:450;display:flex;align-items:center;gap:8px;cursor:pointer;text-align:left;white-space:nowrap;transition:background-color 110ms ease,color 110ms ease;& svg{width:13px;height:13px;flex-shrink:0;opacity:.78;}&:hover{background-color:rgba(164,196,255,.09);color:var(--foreground);& svg{opacity:1;}}}',
+    '& [data-ag-find-sonar="1"]{border-radius:var(--ag-cs-r-md,8px) !important;animation:ag-cs-find-sonar 700ms ease-out forwards;}',
+    '& .ag-cs-conv-find{position:absolute;top:10px;right:16px;z-index:55;width:min(496px,calc(100% - 32px));box-sizing:border-box;display:flex;align-items:center;gap:4px;padding:5px 7px;border-radius:var(--ag-cs-r-lg,12px);background-color:var(--ag-cs-popover-bg,rgba(14,16,22,.95));background-image:linear-gradient(rgba(164,196,255,.05) 0%,transparent 48%);backdrop-filter:blur(16px) saturate(140%);border:1px solid var(--ag-cs-border-2,rgba(214,226,255,.14));box-shadow:inset 0 1px 0 var(--ag-cs-specular,rgba(255,255,255,.1)),var(--ag-cs-surface-sh,0 16px 36px -10px rgba(0,0,0,.62));font-family:var(--font-sans,system-ui,sans-serif);color:var(--foreground,#F2F2F5);user-select:none;animation:ag-cs-diff-in 120ms var(--ag-ease-out,ease-out);&[data-ag-find-fixed="1"]{position:fixed;top:52px;right:20px;}&[hidden]{display:none !important;}}',
+    '& .ag-cs-conv-find-field{flex:1 1 auto;min-width:100px;display:flex;align-items:center;gap:2px;height:28px;padding:0 4px 0 8px;border-radius:var(--ag-cs-r-sm,8px);border:1px solid var(--ag-cs-border-1,rgba(255,255,255,.1));background:color-mix(in srgb,var(--background,#0B0B0E) 65%,var(--card,#141418));transition:border-color 120ms ease;&:focus-within{border-color:color-mix(in srgb,var(--primary,#669DF6) 62%,transparent);}&[data-invalid="1"]{border-color:rgba(239,68,68,.65);}}',
+    '& .ag-cs-conv-find-input{flex:1 1 auto;min-width:0;width:100%;height:100%;padding:0 4px 0 0;border:0 !important;background:transparent !important;color:var(--foreground,#F2F2F5);font:400 12.5px/1.3 var(--font-sans,system-ui,sans-serif);outline:none !important;box-shadow:none !important;&::placeholder{color:var(--placeholder,rgba(160,164,178,.72));}}',
+    '& :is(.ag-cs-conv-find-opt,.ag-cs-conv-find-nav,.ag-cs-conv-find-earlier){appearance:none;flex:none;height:22px;padding:0 5px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--muted-foreground,#9CA3AF);font:500 11px/1 var(--ag-cs-mono-stack,monospace);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background-color 110ms ease,color 110ms ease,border-color 110ms ease;&:hover{background:var(--ag-cs-hover-wash,rgba(255,255,255,.08));color:var(--foreground,#F2F2F5);}&[aria-pressed="true"]{background:color-mix(in srgb,var(--primary,#669DF6) 18%,transparent);border-color:color-mix(in srgb,var(--primary,#669DF6) 44%,transparent);color:var(--primary,#669DF6);}&:disabled{opacity:.36;cursor:default;pointer-events:none;}}',
+    '& .ag-cs-conv-find-earlier{height:24px;padding:0 6px;gap:3px;font-family:var(--font-sans,system-ui,sans-serif);font-size:11px;white-space:nowrap;border-color:var(--ag-cs-border-1,rgba(255,255,255,.1));&[data-scanning="1"]{background:color-mix(in srgb,var(--primary,#669DF6) 18%,transparent);border-color:color-mix(in srgb,var(--primary,#669DF6) 46%,transparent);color:var(--primary,#669DF6);animation:ag-cs-diff-pulse 1.1s ease-in-out infinite;}&[hidden]{display:none !important;}}',
+    '& .ag-cs-conv-find-nav{width:24px;height:24px;padding:0;font-family:var(--font-sans,system-ui,sans-serif);& svg{width:13px;height:13px;}}',
+    '& .ag-cs-conv-find-count{flex:none;min-width:42px;padding:0 4px;text-align:center;font:500 11px/1 var(--ag-cs-mono-stack,monospace);font-variant-numeric:tabular-nums;color:var(--secondary-foreground,#C4C4CE);white-space:nowrap;&[data-empty="1"]{color:#F87171;}}',
     '}',
     'html[data-ag-cs-style][data-ag-cs-theme="light"],html[data-ag-cs-style]>body:is(.theme-light,.light-theme,.light){',
     '& [data-ag-diff-chip="1"]{background:transparent !important;border-color:transparent !important;box-shadow:none !important;& [data-ag-diff-chip-file="1"]{text-decoration-color:rgba(15,23,42,.20);}&:hover{background-color:rgba(15,23,42,.048) !important;& [data-ag-diff-chip-file="1"]{text-decoration-color:rgba(15,23,42,.42) !important;}}&[data-ag-inline-diff-open="1"]{background-color:rgba(15,23,42,.068) !important;box-shadow:inset 0 -1px 0 rgba(15,23,42,.24) !important;}}',
@@ -55,14 +67,21 @@
     '& .ag-cs-inline-diff-wrap-tag{background:rgba(15,23,42,.045);border-color:rgba(15,23,42,.10);}',
     '& .ag-cs-inline-diff-ln{background-color:#F3F5F9;border-right-color:rgba(15,23,42,.08);color:rgba(71,85,105,.62);}',
     '& .ag-cs-diff-ctx-menu{background:rgba(252,253,255,.96);border-color:rgba(15,23,42,.12);box-shadow:0 12px 30px -8px rgba(15,23,42,.16),0 0 0 1px rgba(15,23,42,.06);& .ag-cs-diff-ctx-item:hover{background-color:rgba(37,99,235,.07);}}',
+    '& [data-ag-find-sonar="1"]{animation-name:ag-cs-find-sonar-light;}',
+    '& .ag-cs-conv-find{background:rgba(252,253,255,.96);border-color:rgba(15,23,42,.14);box-shadow:0 12px 30px -8px rgba(15,23,42,.18),0 0 0 1px rgba(15,23,42,.06);color:#0F172A;}',
+    '& .ag-cs-conv-find-field{background:#F4F6FA;border-color:rgba(15,23,42,.12);}',
+    '& .ag-cs-conv-find-input{color:#0F172A;}',
+    '& .ag-cs-conv-find-count{color:#475569;&[data-empty="1"]{color:#DC2626;}}',
+    '& :is(.ag-cs-conv-find-opt,.ag-cs-conv-find-nav,.ag-cs-conv-find-earlier){color:#64748B;&:hover{background:rgba(15,23,42,.06);color:#0F172A;}}',
+    '& .ag-cs-conv-find-earlier{border-color:rgba(15,23,42,.12);}',
     '& .ag-cs-inline-diff-line{&:is(.is-add,.is-del) .ag-cs-inline-diff-sign{font-weight:600;opacity:1;text-shadow:none;&.is-cont{opacity:.38;font-weight:400;}}&.is-add{background:rgba(22,163,74,.09) !important;& .ag-cs-inline-diff-ln{background-color:#E7F6EC;color:#15803D;box-shadow:inset 2px 0 0 #16A34A;}& .ag-cs-inline-diff-sign{color:#15803D !important;}}&.is-del{background:rgba(220,38,38,.085) !important;& .ag-cs-inline-diff-ln{background-color:#FDECEC;color:#B91C1C;box-shadow:inset 2px 0 0 #DC2626;}& .ag-cs-inline-diff-sign{color:#B91C1C !important;}}}',
     '& .ag-cs-inline-diff-line.is-hunk{background-color:rgba(15,23,42,.025);border-color:rgba(15,23,42,.06);& .ag-cs-inline-diff-ln{background-color:#EEF1F6;color:rgba(71,85,105,.55);}}',
     '& .ag-cs-inline-diff-gap-rule{background:linear-gradient(90deg,rgba(15,23,42,.12),rgba(15,23,42,.03));}',
     '}',
-    '@media (prefers-reduced-motion:reduce){.ag-cs-inline-diff-loading::before,.ag-cs-diff-ctx-menu{animation:none !important;}.ag-cs-diff-ctx-menu{backdrop-filter:none !important;}html[data-ag-cs-style]:not([data-ag-cs-motion="ultra"]):not([data-ag-cs-motion="standard"]) .ag-cs-inline-diff-box{animation:none !important;filter:none !important;}}',
-    'html[data-ag-cs-style][data-ag-cs-win-blur="1"] .ag-cs-inline-diff-loading::before{animation-play-state:paused !important;}',
-    'html[data-ag-cs-style][data-ag-cs-motion="off"] .ag-cs-inline-diff-box,html[data-ag-cs-style][data-ag-cs-motion="off"] .ag-cs-inline-diff-loading::before,html[data-ag-cs-style][data-ag-cs-motion="off"] .ag-cs-diff-ctx-menu{animation:none !important;transition:none !important;}',
-    'html[data-ag-cs-style]:is([data-ag-cs-win-blur="1"],[data-ag-cs-motion="off"]) .ag-cs-diff-ctx-menu{backdrop-filter:none !important;}',
+    '@media (prefers-reduced-motion:reduce){.ag-cs-inline-diff-loading::before,.ag-cs-diff-ctx-menu,.ag-cs-conv-find,.ag-cs-conv-find-earlier[data-scanning="1"],[data-ag-find-sonar="1"]{animation:none !important;}.ag-cs-diff-ctx-menu,.ag-cs-conv-find{backdrop-filter:none !important;}html[data-ag-cs-style]:not([data-ag-cs-motion="ultra"]):not([data-ag-cs-motion="standard"]) .ag-cs-inline-diff-box{animation:none !important;filter:none !important;}}',
+    'html[data-ag-cs-style][data-ag-cs-win-blur="1"] :is(.ag-cs-inline-diff-loading::before,.ag-cs-conv-find-earlier[data-scanning="1"]){animation-play-state:paused !important;}',
+    'html[data-ag-cs-style][data-ag-cs-motion="off"] .ag-cs-inline-diff-box,html[data-ag-cs-style][data-ag-cs-motion="off"] .ag-cs-inline-diff-loading::before,html[data-ag-cs-style][data-ag-cs-motion="off"] .ag-cs-diff-ctx-menu,html[data-ag-cs-style][data-ag-cs-motion="off"] .ag-cs-conv-find,html[data-ag-cs-style][data-ag-cs-motion="off"] .ag-cs-conv-find-earlier[data-scanning="1"],html[data-ag-cs-style][data-ag-cs-motion="off"] [data-ag-find-sonar="1"]{animation:none !important;transition:none !important;}',
+    'html[data-ag-cs-style]:is([data-ag-cs-win-blur="1"],[data-ag-cs-motion="off"]) :is(.ag-cs-diff-ctx-menu,.ag-cs-conv-find){backdrop-filter:none !important;}',
   ].join('\n');
 
   const NO_TR_ATTRS = [
@@ -366,6 +385,126 @@
         fr: '⋯ Extraits clés affichés · Cliquer pour ouvrir le diff complet',
         de: '⋯ Wichtige Bereiche angezeigt · Klicken für vollständigen Diff',
       },
+      convFindPh: {
+        'zh-CN': '查找会话 (含提问气泡)...',
+        'zh-TW': '搜尋會話 (含提問氣泡)...',
+        en: 'Find in conversation (incl. prompts)...',
+        ja: '会話を検索 (質問を含む)...',
+        ko: '대화 내 검색 (질문 포함)...',
+        es: 'Buscar en conversación...',
+        fr: 'Rechercher (requêtes incluses)...',
+        de: 'Im Chat suchen (inkl. Prompts)...',
+      },
+      convFindEmpty: {
+        'zh-CN': '无结果',
+        'zh-TW': '無結果',
+        en: 'No results',
+        ja: '結果なし',
+        ko: '결과 없음',
+        es: 'Sin resultados',
+        fr: 'Aucun résultat',
+        de: 'Keine Treffer',
+      },
+      convFindInvalid: {
+        'zh-CN': '正则无效',
+        'zh-TW': '正則無效',
+        en: 'Invalid regex',
+        ja: '無効な正規表現',
+        ko: '잘못된 정규식',
+        es: 'Regex inválida',
+        fr: 'Regex invalide',
+        de: 'Ungültige Regex',
+      },
+      convFindCase: {
+        'zh-CN': '区分大小写 (Aa)',
+        'zh-TW': '區分大小寫 (Aa)',
+        en: 'Match Case (Aa)',
+        ja: '大文字・小文字を区別 (Aa)',
+        ko: '대소문자 구분 (Aa)',
+        es: 'Coincidir mayús./minús. (Aa)',
+        fr: 'Respecter la casse (Aa)',
+        de: 'Groß-/Kleinschreibung (Aa)',
+      },
+      convFindWord: {
+        'zh-CN': '全字匹配 (ab)',
+        'zh-TW': '全字匹配 (ab)',
+        en: 'Match Whole Word (ab)',
+        ja: '単語単位で一致 (ab)',
+        ko: '단어 단위로 일치 (ab)',
+        es: 'Solo palabras completas (ab)',
+        fr: 'Mot entier (ab)',
+        de: 'Nur ganzes Wort (ab)',
+      },
+      convFindRegex: {
+        'zh-CN': '使用正则表达式 (.*)',
+        'zh-TW': '使用正則表達式 (.*)',
+        en: 'Use Regular Expression (.*)',
+        ja: '正規表現を使用 (.*)',
+        ko: '정규식 사용 (.*)',
+        es: 'Usar expresión regular (.*)',
+        fr: 'Expression régulière (.*)',
+        de: 'Regulärer Ausdruck (.*)',
+      },
+      convFindPrev: {
+        'zh-CN': '上一个 (Shift+Enter)',
+        'zh-TW': '上一個 (Shift+Enter)',
+        en: 'Previous Match (Shift+Enter)',
+        ja: '前の一致 (Shift+Enter)',
+        ko: '이전 일치 (Shift+Enter)',
+        es: 'Anterior (Shift+Enter)',
+        fr: 'Précédent (Shift+Enter)',
+        de: 'Vorheriger Treffer (Shift+Enter)',
+      },
+      convFindNext: {
+        'zh-CN': '下一个 (Enter)',
+        'zh-TW': '下一個 (Enter)',
+        en: 'Next Match (Enter)',
+        ja: '次の一致 (Enter)',
+        ko: '다음 일치 (Enter)',
+        es: 'Siguiente (Enter)',
+        fr: 'Suivant (Enter)',
+        de: 'Nächster Treffer (Enter)',
+      },
+      convFindClose: {
+        'zh-CN': '关闭 (Esc)',
+        'zh-TW': '關閉 (Esc)',
+        en: 'Close (Esc)',
+        ja: '閉じる (Esc)',
+        ko: '닫기 (Esc)',
+        es: 'Cerrar (Esc)',
+        fr: 'Fermer (Esc)',
+        de: 'Schließen (Esc)',
+      },
+      convFindEarlier: {
+        'zh-CN': '↑更早',
+        'zh-TW': '↑更早',
+        en: '↑Earlier',
+        ja: '↑過去',
+        ko: '↑이전',
+        es: '↑Antes',
+        fr: '↑Plus tôt',
+        de: '↑Früher',
+      },
+      convFindEarlierTip: {
+        'zh-CN': '向上滚动加载未渲染的较早历史消息并查找',
+        'zh-TW': '向上捲動載入未渲染的較早歷史訊息並搜尋',
+        en: 'Scroll up to load earlier unloaded history & find',
+        ja: '上にスクロールして未読込の履歴を検索',
+        ko: '위로 스크롤하여 이전 대화 기록 불러와 검색',
+        es: 'Desplazar arriba para cargar historial anterior',
+        fr: 'Défiler en haut pour charger l’historique',
+        de: 'Nach oben scrollen & früheren Verlauf laden',
+      },
+      convFindScanning: {
+        'zh-CN': '加载历史...',
+        'zh-TW': '載入歷史...',
+        en: 'Loading...',
+        ja: '読込中...',
+        ko: '로딩 중...',
+        es: 'Cargando...',
+        fr: 'Chargement...',
+        de: 'Laden...',
+      },
     };
 
     function getUiText(key, fallback) {
@@ -413,6 +552,8 @@
       } else if (kind === 'close') {
         addNode('path', { d: 'M18 6L6 18' });
         addNode('path', { d: 'M6 6l12 12' });
+      } else if (kind === 'chevUp') {
+        addNode('polyline', { points: '18 15 12 9 6 15' });
       } else if (kind === 'chevDown') {
         addNode('polyline', { points: '6 9 12 15 18 9' });
       } else if (kind === 'moreDots') {
@@ -1202,14 +1343,909 @@
       } catch {}
     }
 
+    // ── In-Conversation Find Overlay (Ctrl+Shift+F, incl. User Message Bubbles) ─
+    const FIND_HL_MATCH = 'ag-find-match';
+    const FIND_HL_ACTIVE = 'ag-find-active';
+    const FIND_BLOCK_TAGS = new Set(
+      'ADDRESS,ARTICLE,ASIDE,BLOCKQUOTE,BUTTON,DD,DIV,DL,DT,FIELDSET,FIGCAPTION,FIGURE,FOOTER,FORM,H1,H2,H3,H4,H5,H6,HEADER,HR,LI,MAIN,NAV,OL,P,PRE,SECTION,TABLE,TBODY,TD,TFOOT,TH,THEAD,TR,UL'.split(
+        ','
+      )
+    );
+    const FIND_SKIP_TAGS = new Set('SCRIPT,STYLE,NOSCRIPT,TEMPLATE,SVG,CANVAS,INPUT,TEXTAREA,SELECT,OPTION'.split(','));
+    const FIND_SKIP_CLASS_RE =
+      /\b(?:ag-cs-conv-find|ag-cs-nav-outline-popover|ag-cs-nav-outline-trigger|ag-cs-code-fold-btn|ag-cs-diff-ctx-menu|ag-cs-home-panel-seat|ag-cs-crab|ag-cs-dual-stage|ag-cs-crystal-bar)\b/;
+    const FIND_SKIP_TESTID_SET = new Set([
+      'agent-input-box',
+      'conversation-navigator',
+      'user-message-actions',
+      'agent-response-actions',
+    ]);
+    const FIND_WORD_CHAR_RE = /[\p{L}\p{N}_]/u;
+
+    let convFindRoot = null;
+    let convFindField = null;
+    let convFindInput = null;
+    let convFindCountEl = null;
+    let convFindCaseBtn = null;
+    let convFindWordBtn = null;
+    let convFindRegexBtn = null;
+    let convFindEarlierBtn = null;
+    let convFindPrevBtn = null;
+    let convFindNextBtn = null;
+    let convFindCloseBtn = null;
+    let convFindOpen = false;
+    let convFindComposing = false;
+    let convFindScanning = false;
+    let convFindScanSeq = 0;
+    let convFindScanTimer = 0;
+    let convFindScrollFixTimer = 0;
+    let convFindMatches = [];
+    let convFindIdx = -1;
+    let convFindDebounceTimer = 0;
+    let convFindSonarTimer = 0;
+    let convFindSonarEl = null;
+    let convFindPrevFocus = null;
+    let convFindLastCid = '';
+    const convFindOpts = { matchCase: false, wholeWord: false, regex: false };
+
+    function getHighlightCtor() {
+      const cssObj = win?.CSS || (typeof CSS !== 'undefined' ? CSS : null);
+      const hlCtor = typeof Highlight === 'function' ? Highlight : win?.Highlight || G.Highlight;
+      if (cssObj?.highlights && typeof cssObj.highlights.set === 'function' && typeof cssObj.highlights.delete === 'function' && typeof hlCtor === 'function') {
+        return { highlights: cssObj.highlights, HighlightCtor: hlCtor };
+      }
+      return null;
+    }
+
+    function clearConvFindHighlights() {
+      const api = getHighlightCtor();
+      if (api) {
+        try {
+          api.highlights.delete(FIND_HL_MATCH);
+          api.highlights.delete(FIND_HL_ACTIVE);
+        } catch {}
+      }
+    }
+
+    function clearConvFindSonar() {
+      if (convFindSonarTimer) {
+        clearTimeout(convFindSonarTimer);
+        convFindSonarTimer = 0;
+      }
+      if (convFindSonarEl) {
+        const el = convFindSonarEl;
+        convFindSonarEl = null;
+        if (el.isConnected !== false) mut(() => ra(el, 'data-ag-find-sonar'));
+      }
+    }
+
+    function pulseFindSonar(target) {
+      if (!target || isDead()) return;
+      clearConvFindSonar();
+      convFindSonarEl = target;
+      mut(() => sa(target, 'data-ag-find-sonar', '1'));
+      convFindSonarTimer = setTimeout(() => {
+        convFindSonarTimer = 0;
+        if (convFindSonarEl === target) {
+          convFindSonarEl = null;
+          if (!isDead() && target.isConnected !== false) mut(() => ra(target, 'data-ag-find-sonar'));
+        }
+      }, 720);
+    }
+
+    function findConvView() {
+      if (!doc?.querySelectorAll) return null;
+      const views = doc.querySelectorAll('[data-testid="conversation-view"]');
+      for (let i = 0; i < views.length; i++) {
+        const cv = views[i];
+        if (!cv || cv.hidden) continue;
+        if (cv.closest?.('[data-testid="subagent-tab-conversation"]')) continue;
+        if (cv.closest?.('.agy-home') || cv.querySelector?.('.agy-home')) continue;
+        return cv;
+      }
+      if (views.length > 0) {
+        const fb = views[0];
+        if (fb && !fb.closest?.('.agy-home') && !fb.querySelector?.('.agy-home')) return fb;
+      }
+      return null;
+    }
+
+    function readActiveCascadeId(conv) {
+      const cv = conv || findConvView();
+      if (!cv) return '';
+      return String(
+        ga(cv, 'data-cascade-id') ||
+          ga(cl(cv, '[data-cascade-id]'), 'data-cascade-id') ||
+          ga(qs(cv, '[data-cascade-id]'), 'data-cascade-id') ||
+          ''
+      ).trim();
+    }
+
+    function findConvViewport(conv, nearEl = null) {
+      if (nearEl?.closest) {
+        const direct = nearEl.closest('[data-testid="autoscroll-viewport"]');
+        if (direct) return direct;
+      }
+      const root = conv || findConvView();
+      if (!root) return null;
+      const vps = qa(root, '[data-testid="autoscroll-viewport"]');
+      let best = null;
+      let bestScore = -1;
+      for (let i = 0; i < vps.length; i++) {
+        const v = vps[i];
+        if (!v || v.hidden) continue;
+        if (v.closest?.('[data-testid="subagent-tab-conversation"]') || v.closest?.('.ag-cs-inline-diff-box')) continue;
+        const sh = Number(v.scrollHeight || 0);
+        const st = Number(v.scrollTop || 0);
+        const score = sh > 0 ? sh + (st > 0 ? 1000 : 0) : st > 0 ? 500 : 1;
+        if (score > bestScore) {
+          bestScore = score;
+          best = v;
+        }
+      }
+      if (best) return best;
+      return qs(root, '[data-testid="autoscroll-viewport"]') || root;
+    }
+
+    function shouldSkipFindEl(el) {
+      if (!el || el.nodeType !== 1) return true;
+      if (FIND_SKIP_TAGS.has(tagU(el))) return true;
+      if (el.hidden || ga(el, 'aria-hidden') === 'true') return true;
+      if (el.classList?.contains?.('hidden')) return true;
+      const tid = ga(el, 'data-testid');
+      if (tid && FIND_SKIP_TESTID_SET.has(tid)) return true;
+      const cls = String(el.className || '');
+      if (cls && FIND_SKIP_CLASS_RE.test(cls)) return true;
+      if (el.style?.display === 'none' || el.style?.visibility === 'hidden') return true;
+      return false;
+    }
+
+    function collectConversationBlocks(conv) {
+      const searchRoot = conv;
+      if (!searchRoot) return [];
+      const blocks = [];
+      let curRuns = [];
+      let curLen = 0;
+      let curBlockEl = searchRoot;
+      let totalNodes = 0;
+      let totalChars = 0;
+      const MAX_NODES = 300000;
+      const MAX_CHARS = 8000000;
+
+      const flush = (nextBlockEl) => {
+        if (curRuns.length > 0 && curLen > 0) {
+          let text = '';
+          for (let i = 0; i < curRuns.length; i++) text += curRuns[i].norm;
+          blocks.push({ text, runs: curRuns, blockEl: curBlockEl });
+        }
+        curRuns = [];
+        curLen = 0;
+        if (nextBlockEl) curBlockEl = nextBlockEl;
+      };
+
+      const walk = (node) => {
+        if (!node || totalNodes >= MAX_NODES || totalChars >= MAX_CHARS) return;
+        totalNodes++;
+        if (node.nodeType === 3) {
+          const raw = node.nodeValue ?? node.textContent ?? '';
+          if (!raw) return;
+          const norm = raw.replace(/\u00a0/g, ' ');
+          const start = curLen;
+          curLen += norm.length;
+          totalChars += norm.length;
+          curRuns.push({ node, start, end: curLen, norm });
+          return;
+        }
+        if (node.nodeType !== 1) return;
+        if (node !== searchRoot && shouldSkipFindEl(node)) return;
+        const tag = tagU(node);
+        if (tag === 'BR') {
+          flush(curBlockEl);
+          return;
+        }
+        const isBlock = node !== searchRoot && FIND_BLOCK_TAGS.has(tag);
+        if (isBlock) flush(node);
+        const kids = node.childNodes && node.childNodes.length ? node.childNodes : node.children;
+        if (kids && kids.length) {
+          for (let i = 0; i < kids.length; i++) {
+            walk(kids[i]);
+            if (totalNodes >= MAX_NODES || totalChars >= MAX_CHARS) break;
+          }
+        }
+        if (isBlock) flush(node.parentElement || searchRoot);
+      };
+
+      walk(searchRoot);
+      flush(searchRoot);
+      return blocks;
+    }
+
+    function locateOffsetInRuns(runs, targetOffset) {
+      let lo = 0;
+      let hi = runs.length - 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        const r = runs[mid];
+        if (targetOffset < r.start) hi = mid - 1;
+        else if (targetOffset > r.end) lo = mid + 1;
+        else return { node: r.node, offset: targetOffset - r.start };
+      }
+      const last = runs[runs.length - 1];
+      return last ? { node: last.node, offset: last.norm.length } : null;
+    }
+
+    function locateEndOffsetInRuns(runs, endOffset) {
+      for (let i = 0; i < runs.length; i++) {
+        const r = runs[i];
+        if (endOffset > r.start && endOffset <= r.end) {
+          return { node: r.node, offset: endOffset - r.start };
+        }
+      }
+      return locateOffsetInRuns(runs, endOffset);
+    }
+
+    function executeFindQuery(blocks, queryText) {
+      const qNorm = String(queryText || '').replace(/\u00a0/g, ' ').replace(/[\r\n]+/g, ' ');
+      if (!qNorm) return { matches: [], invalidRegex: false };
+
+      const maxMatches = 1500;
+      const runPass = (needleStr) => {
+        const out = [];
+        let rx = null;
+        if (convFindOpts.regex) {
+          try {
+            rx = new RegExp(needleStr, convFindOpts.matchCase ? 'g' : 'gi');
+          } catch {
+            return { matches: [], invalidRegex: true };
+          }
+        }
+        const needle = convFindOpts.matchCase ? needleStr : needleStr.toLowerCase();
+        if (!convFindOpts.regex && !needle) return { matches: [], invalidRegex: false };
+
+        for (let bi = 0; bi < blocks.length && out.length < maxMatches; bi++) {
+          const blk = blocks[bi];
+          const txt = blk.text;
+          if (!txt) continue;
+
+          if (rx) {
+            rx.lastIndex = 0;
+            let m;
+            while ((m = rx.exec(txt)) !== null && out.length < maxMatches) {
+              const len = m[0].length;
+              if (len === 0) {
+                rx.lastIndex++;
+                continue;
+              }
+              const sIdx = m.index;
+              const eIdx = sIdx + len;
+              if (convFindOpts.wholeWord) {
+                const prev = sIdx > 0 ? txt[sIdx - 1] : '';
+                const next = eIdx < txt.length ? txt[eIdx] : '';
+                if ((prev && FIND_WORD_CHAR_RE.test(prev)) || (next && FIND_WORD_CHAR_RE.test(next))) continue;
+              }
+              const sp = locateOffsetInRuns(blk.runs, sIdx);
+              const ep = locateEndOffsetInRuns(blk.runs, eIdx);
+              if (sp && ep) out.push({ sp, ep, blockEl: blk.blockEl });
+            }
+          } else {
+            const hay = convFindOpts.matchCase ? txt : txt.toLowerCase();
+            let pos = 0;
+            while ((pos = hay.indexOf(needle, pos)) !== -1 && out.length < maxMatches) {
+              const sIdx = pos;
+              const eIdx = pos + needle.length;
+              pos += Math.max(1, needle.length);
+              if (convFindOpts.wholeWord) {
+                const prev = sIdx > 0 ? txt[sIdx - 1] : '';
+                const next = eIdx < txt.length ? txt[eIdx] : '';
+                if ((prev && FIND_WORD_CHAR_RE.test(prev)) || (next && FIND_WORD_CHAR_RE.test(next))) continue;
+              }
+              const sp = locateOffsetInRuns(blk.runs, sIdx);
+              const ep = locateEndOffsetInRuns(blk.runs, eIdx);
+              if (sp && ep) out.push({ sp, ep, blockEl: blk.blockEl });
+            }
+          }
+        }
+        return { matches: out, invalidRegex: false };
+      };
+
+      let res = runPass(qNorm);
+      // Guard pasted trailing/leading invisible spaces (common when copying prompts): retry trimmed if exact 0 hits
+      if (!res.invalidRegex && res.matches.length === 0 && !convFindOpts.regex && !convFindOpts.wholeWord) {
+        const trimmed = qNorm.trim();
+        if (trimmed && trimmed !== qNorm) res = runPass(trimmed);
+      }
+      if (res.invalidRegex) return res;
+
+      const finalized = [];
+      for (let i = 0; i < res.matches.length; i++) {
+        const hit = res.matches[i];
+        let range = null;
+        if (typeof doc?.createRange === 'function') {
+          try {
+            range = doc.createRange();
+            range.setStart(hit.sp.node, hit.sp.offset);
+            range.setEnd(hit.ep.node, hit.ep.offset);
+          } catch {
+            range = null;
+          }
+        }
+        const anchorEl = hit.sp.node?.parentElement || hit.blockEl;
+        const turnEl =
+          cl(anchorEl, '[data-testid="user-message-bubble"], [data-testid="user-input-step"], [data-testid="agent-response"], [data-testid="planner-response-text"]') ||
+          hit.blockEl ||
+          anchorEl;
+        finalized.push({ range, anchorEl, turnEl });
+      }
+      return { matches: finalized, invalidRegex: false };
+    }
+
+    function applyConvFindHighlights() {
+      const api = getHighlightCtor();
+      if (!api) return;
+      clearConvFindHighlights();
+      const ranges = [];
+      for (let i = 0; i < convFindMatches.length; i++) {
+        if (convFindMatches[i].range) ranges.push(convFindMatches[i].range);
+      }
+      if (ranges.length) {
+        try {
+          api.highlights.set(FIND_HL_MATCH, new api.HighlightCtor(...ranges));
+        } catch {}
+      }
+      const act = convFindIdx >= 0 && convFindIdx < convFindMatches.length ? convFindMatches[convFindIdx] : null;
+      if (act?.range) {
+        try {
+          api.highlights.set(FIND_HL_ACTIVE, new api.HighlightCtor(act.range));
+        } catch {}
+      }
+    }
+
+    function scrollMatchIntoView(match) {
+      if (!match) return;
+      if (convFindScrollFixTimer) {
+        clearTimeout(convFindScrollFixTimer);
+        convFindScrollFixTimer = 0;
+      }
+      const target = match.anchorEl || match.turnEl;
+      const conv = findConvView();
+      const vp = findConvViewport(conv, target);
+
+      const getRect = () => {
+        if (match.range && typeof match.range.getBoundingClientRect === 'function') {
+          try {
+            const r = match.range.getBoundingClientRect();
+            if (r && (r.height > 0 || r.width > 0)) return r;
+          } catch {}
+        }
+        if (target && typeof target.getBoundingClientRect === 'function') {
+          try {
+            const r = target.getBoundingClientRect();
+            if (r && (r.height > 0 || r.width > 0)) return r;
+          } catch {}
+        }
+        return null;
+      };
+
+      const centerInViewport = (smooth) => {
+        const rr = getRect();
+        const vr = vp?.getBoundingClientRect?.();
+        if (vp && rr && vr && vr.height > 0) {
+          const top = Math.max(0, Math.round((vp.scrollTop || 0) + (rr.top - vr.top) - vr.height * 0.36));
+          if (typeof vp.scrollTo === 'function') vp.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' });
+          else vp.scrollTop = top;
+          return true;
+        }
+        if (typeof target?.scrollIntoView === 'function') {
+          try {
+            target.scrollIntoView({ block: 'center', behavior: smooth ? 'smooth' : 'auto' });
+          } catch {}
+          return true;
+        }
+        return false;
+      };
+
+      centerInViewport(false);
+      // Re-center once after off-screen content-visibility:auto turns lay out their real height
+      if (typeof setTimeout === 'function' && vp && typeof target?.getBoundingClientRect === 'function') {
+        convFindScrollFixTimer = setTimeout(() => {
+          convFindScrollFixTimer = 0;
+          if (isDead() || !convFindOpen || target.isConnected === false) return;
+          const rr = getRect();
+          const vr = vp.getBoundingClientRect?.();
+          if (rr && vr && vr.height > 0 && (rr.bottom < vr.top + 12 || rr.top > vr.bottom - 12)) {
+            centerInViewport(true);
+          }
+        }, 55);
+      }
+      pulseFindSonar(match.turnEl || target);
+    }
+
+    function updateConvFindStatusUi(invalidRegex = false) {
+      if (!convFindCountEl) return;
+      const q = String(convFindInput?.value || '');
+      const total = convFindMatches.length;
+      if (convFindField) setA(convFindField, 'data-invalid', invalidRegex ? '1' : '0');
+      if (convFindScanning) {
+        convFindCountEl.textContent = getUiText('convFindScanning', 'Loading...');
+        ra(convFindCountEl, 'data-empty');
+      } else if (invalidRegex) {
+        convFindCountEl.textContent = getUiText('convFindInvalid', 'Invalid regex');
+        setA(convFindCountEl, 'data-empty', '1');
+      } else if (!q) {
+        convFindCountEl.textContent = '';
+        ra(convFindCountEl, 'data-empty');
+      } else if (total === 0) {
+        convFindCountEl.textContent = getUiText('convFindEmpty', 'No results');
+        setA(convFindCountEl, 'data-empty', '1');
+      } else {
+        convFindCountEl.textContent = `${convFindIdx + 1}/${total}`;
+        ra(convFindCountEl, 'data-empty');
+      }
+      if (convFindEarlierBtn) {
+        const vp = findConvViewport(findConvView());
+        const canScan = Boolean(q) && !invalidRegex && (total === 0 || (vp && Number(vp.scrollTop || 0) > 16) || convFindScanning);
+        convFindEarlierBtn.hidden = !canScan;
+        setA(convFindEarlierBtn, 'data-scanning', convFindScanning ? '1' : '0');
+        setA(convFindEarlierBtn, 'aria-pressed', convFindScanning ? 'true' : 'false');
+      }
+      const dis = total === 0 || convFindScanning;
+      if (convFindPrevBtn) convFindPrevBtn.disabled = dis;
+      if (convFindNextBtn) convFindNextBtn.disabled = dis;
+    }
+
+    function refreshConvFindLocale() {
+      if (!convFindRoot) return;
+      if (convFindInput) convFindInput.placeholder = getUiText('convFindPh', 'Find in conversation...');
+      if (convFindCaseBtn) convFindCaseBtn.title = getUiText('convFindCase', 'Match Case (Aa)');
+      if (convFindWordBtn) convFindWordBtn.title = getUiText('convFindWord', 'Match Whole Word (ab)');
+      if (convFindRegexBtn) convFindRegexBtn.title = getUiText('convFindRegex', 'Use Regular Expression (.*)');
+      if (convFindEarlierBtn) {
+        convFindEarlierBtn.textContent = getUiText('convFindEarlier', '↑Earlier');
+        const tip = getUiText('convFindEarlierTip', 'Scroll up to load earlier history & find');
+        convFindEarlierBtn.title = tip;
+        sa(convFindEarlierBtn, 'aria-label', tip);
+      }
+      if (convFindPrevBtn) {
+        const lbl = getUiText('convFindPrev', 'Previous Match');
+        convFindPrevBtn.title = lbl;
+        sa(convFindPrevBtn, 'aria-label', lbl);
+      }
+      if (convFindNextBtn) {
+        const lbl = getUiText('convFindNext', 'Next Match');
+        convFindNextBtn.title = lbl;
+        sa(convFindNextBtn, 'aria-label', lbl);
+      }
+      if (convFindCloseBtn) {
+        const lbl = getUiText('convFindClose', 'Close (Esc)');
+        convFindCloseBtn.title = lbl;
+        sa(convFindCloseBtn, 'aria-label', lbl);
+      }
+      updateConvFindStatusUi(ga(convFindField, 'data-invalid') === '1');
+    }
+
+    function ensureConvFindUi(conv) {
+      if (!doc || !doc.createElement) return null;
+      const mountParent = conv || doc.body;
+      if (!mountParent) return null;
+      if (!convFindRoot) {
+        const input = mk('input', 'ag-cs-conv-find-input');
+        input.type = 'text';
+        input.autocomplete = 'off';
+        input.spellcheck = false;
+
+        const mkOpt = (txt, key) => {
+          const b = mk('button', 'ag-cs-conv-find-opt', txt);
+          b.type = 'button';
+          sa(b, 'aria-pressed', 'false');
+          sa(b, 'data-no-press-spring', '1');
+          b.addEventListener('click', (ev) => {
+            ev?.preventDefault?.();
+            ev?.stopPropagation?.();
+            convFindOpts[key] = !convFindOpts[key];
+            sa(b, 'aria-pressed', convFindOpts[key] ? 'true' : 'false');
+            runConvFind(true);
+            convFindInput?.focus?.();
+          });
+          return b;
+        };
+
+        const caseBtn = mkOpt('Aa', 'matchCase');
+        const wordBtn = mkOpt('ab', 'wholeWord');
+        const regexBtn = mkOpt('.*', 'regex');
+        const field = mk('div', 'ag-cs-conv-find-field', null, input, caseBtn, wordBtn, regexBtn);
+        const countEl = mk('span', 'ag-cs-conv-find-count');
+
+        const earlierBtn = mk('button', 'ag-cs-conv-find-earlier');
+        earlierBtn.type = 'button';
+        earlierBtn.hidden = true;
+        sa(earlierBtn, 'data-no-press-spring', '1');
+        earlierBtn.addEventListener('click', (ev) => {
+          ev?.preventDefault?.();
+          ev?.stopPropagation?.();
+          if (convFindScanning) cancelEarlierScan(true);
+          else scanConvFindEarlier();
+        });
+
+        const prevBtn = mk('button', 'ag-cs-conv-find-nav', null, mkSvgIcon('chevUp', 13));
+        prevBtn.type = 'button';
+        sa(prevBtn, 'data-no-press-spring', '1');
+        prevBtn.addEventListener('click', (ev) => {
+          ev?.preventDefault?.();
+          ev?.stopPropagation?.();
+          stepConvFind(-1);
+        });
+
+        const nextBtn = mk('button', 'ag-cs-conv-find-nav', null, mkSvgIcon('chevDown', 13));
+        nextBtn.type = 'button';
+        sa(nextBtn, 'data-no-press-spring', '1');
+        nextBtn.addEventListener('click', (ev) => {
+          ev?.preventDefault?.();
+          ev?.stopPropagation?.();
+          stepConvFind(1);
+        });
+
+        const closeBtn = mk('button', 'ag-cs-conv-find-nav', null, mkSvgIcon('close', 13));
+        closeBtn.type = 'button';
+        sa(closeBtn, 'data-no-press-spring', '1');
+        closeBtn.addEventListener('click', (ev) => {
+          ev?.preventDefault?.();
+          ev?.stopPropagation?.();
+          closeConvFind(true);
+        });
+
+        const rootBar = markNoTrOwned(
+          mk('div', 'ag-cs-conv-find', null, field, countEl, earlierBtn, prevBtn, nextBtn, closeBtn)
+        );
+        sa(rootBar, 'role', 'search');
+        rootBar.hidden = true;
+
+        input.addEventListener('compositionstart', () => {
+          convFindComposing = true;
+        });
+        input.addEventListener('compositionend', () => {
+          convFindComposing = false;
+          cancelEarlierScan(false);
+          runConvFind(true);
+        });
+        input.addEventListener('input', () => {
+          if (convFindComposing) return;
+          cancelEarlierScan(false);
+          if (convFindDebounceTimer) clearTimeout(convFindDebounceTimer);
+          convFindDebounceTimer = setTimeout(() => {
+            convFindDebounceTimer = 0;
+            if (!isDead() && convFindOpen) runConvFind(true);
+          }, 24);
+        });
+        rootBar.addEventListener('keydown', (ev) => {
+          if (!ev) return;
+          if (ev.key === 'Escape') {
+            ev.preventDefault?.();
+            ev.stopPropagation?.();
+            if (convFindScanning) cancelEarlierScan(true);
+            else closeConvFind(true);
+          } else if (ev.key === 'Enter' || ev.key === 'F3') {
+            ev.preventDefault?.();
+            ev.stopPropagation?.();
+            if (convFindDebounceTimer) {
+              clearTimeout(convFindDebounceTimer);
+              convFindDebounceTimer = 0;
+              runConvFind(true);
+            } else if (convFindMatches.length === 0 && convFindInput?.value && !ev.shiftKey) {
+              scanConvFindEarlier();
+            } else {
+              stepConvFind(ev.shiftKey ? -1 : 1);
+            }
+          }
+        });
+
+        convFindRoot = rootBar;
+        convFindField = field;
+        convFindInput = input;
+        convFindCountEl = countEl;
+        convFindCaseBtn = caseBtn;
+        convFindWordBtn = wordBtn;
+        convFindRegexBtn = regexBtn;
+        convFindEarlierBtn = earlierBtn;
+        convFindPrevBtn = prevBtn;
+        convFindNextBtn = nextBtn;
+        convFindCloseBtn = closeBtn;
+      }
+
+      if (convFindRoot.parentElement !== mountParent) {
+        mut(() => {
+          if (mountParent === doc.body) sa(convFindRoot, 'data-ag-find-fixed', '1');
+          else ra(convFindRoot, 'data-ag-find-fixed');
+          mountParent.appendChild(convFindRoot);
+        });
+      }
+      refreshConvFindLocale();
+      return convFindRoot;
+    }
+
+    function cancelEarlierScan(refreshUi = true) {
+      convFindScanSeq++;
+      if (convFindScanTimer) {
+        clearTimeout(convFindScanTimer);
+        convFindScanTimer = 0;
+      }
+      const was = convFindScanning;
+      convFindScanning = false;
+      if (was && refreshUi) updateConvFindStatusUi(false);
+      return was;
+    }
+
+    function emitScrollEvent(vp) {
+      if (!vp || typeof vp.dispatchEvent !== 'function') return;
+      try {
+        if (typeof win?.Event === 'function') vp.dispatchEvent(new win.Event('scroll'));
+        else vp.dispatchEvent({ type: 'scroll' });
+      } catch {}
+    }
+
+    function getTopContentSig(conv) {
+      const vp = findConvViewport(conv);
+      const first = vp?.firstElementChild || conv?.firstElementChild;
+      return `${Number(vp?.scrollHeight || 0)}:${String(first?.textContent || '').slice(0, 64)}`;
+    }
+
+    function scanConvFindEarlier() {
+      if (isDead() || !convFindOpen) return false;
+      const q = String(convFindInput?.value || '');
+      if (!q || ga(convFindField, 'data-invalid') === '1') return false;
+      const conv = findConvView();
+      const vp = findConvViewport(conv);
+      if (!conv || !vp) return false;
+
+      cancelEarlierScan(false);
+      const mySeq = ++convFindScanSeq;
+      convFindScanning = true;
+      updateConvFindStatusUi(false);
+
+      const initialCount = convFindMatches.length;
+      const initialKeys = new Set(
+        convFindMatches.map((m) => String(m.turnEl?.textContent || m.anchorEl?.textContent || '').slice(0, 120))
+      );
+      const savedTop = Number(vp.scrollTop || 0);
+      let hops = 0;
+      let idleAtTop = 0;
+      let lastSig = getTopContentSig(conv);
+
+      const finishMiss = () => {
+        if (convFindScanSeq !== mySeq) return;
+        convFindScanning = false;
+        if (vp.isConnected !== false && initialCount === 0) {
+          vp.scrollTop = savedTop;
+          emitScrollEvent(vp);
+        }
+        runConvFind(false);
+      };
+
+      const stepScan = () => {
+        convFindScanTimer = 0;
+        if (isDead() || !convFindOpen || convFindScanSeq !== mySeq) return;
+
+        const curRes = runConvFind(false);
+        const foundMore =
+          initialCount === 0
+            ? curRes.count > 0
+            : curRes.count > initialCount ||
+              convFindMatches.some((m) => !initialKeys.has(String(m.turnEl?.textContent || m.anchorEl?.textContent || '').slice(0, 120)));
+        if (foundMore) {
+          convFindScanning = false;
+          convFindIdx = 0;
+          applyConvFindHighlights();
+          updateConvFindStatusUi(false);
+          if (convFindMatches[0]) scrollMatchIntoView(convFindMatches[0]);
+          return;
+        }
+
+        if (++hops > 45) {
+          finishMiss();
+          return;
+        }
+
+        const curTop = Number(vp.scrollTop || 0);
+        if (curTop > 2) {
+          const chunk = Math.max(480, Math.round(Number(vp.clientHeight || 600) * 0.85));
+          vp.scrollTop = Math.max(0, curTop - chunk);
+          emitScrollEvent(vp);
+          idleAtTop = 0;
+          lastSig = getTopContentSig(conv);
+          convFindScanTimer = setTimeout(stepScan, 160);
+          return;
+        }
+
+        // At top (scrollTop === 0): wait for host history paginator to prepend older turns
+        const nextSig = getTopContentSig(conv);
+        if (nextSig !== lastSig) {
+          lastSig = nextSig;
+          idleAtTop = 0;
+          convFindScanTimer = setTimeout(stepScan, 180);
+          return;
+        }
+        if (++idleAtTop >= 3) {
+          finishMiss();
+          return;
+        }
+        emitScrollEvent(vp);
+        convFindScanTimer = setTimeout(stepScan, 260);
+      };
+
+      convFindScanTimer = setTimeout(stepScan, 16);
+      return true;
+    }
+
+    function runConvFind(scrollToActive = true) {
+      if (isDead()) return { count: 0, idx: -1 };
+      const conv = findConvView();
+      if (!conv) {
+        convFindMatches = [];
+        convFindIdx = -1;
+        clearConvFindHighlights();
+        updateConvFindStatusUi(false);
+        return { count: 0, idx: -1 };
+      }
+      convFindLastCid = readActiveCascadeId(conv);
+      const q = String(convFindInput?.value || '');
+      if (!q) {
+        convFindMatches = [];
+        convFindIdx = -1;
+        clearConvFindHighlights();
+        updateConvFindStatusUi(false);
+        return { count: 0, idx: -1 };
+      }
+      const blocks = collectConversationBlocks(conv);
+      const { matches, invalidRegex } = executeFindQuery(blocks, q);
+      convFindMatches = matches;
+      convFindIdx = matches.length ? 0 : -1;
+      applyConvFindHighlights();
+      updateConvFindStatusUi(invalidRegex);
+      if (scrollToActive && convFindIdx >= 0) {
+        scrollMatchIntoView(convFindMatches[convFindIdx]);
+      }
+      return { count: convFindMatches.length, idx: convFindIdx };
+    }
+
+    function stepConvFind(delta = 1) {
+      if (isDead() || !convFindOpen) return false;
+      if (!convFindMatches.length) {
+        if (convFindInput?.value) {
+          const r = runConvFind(true);
+          if (r.count === 0 && delta >= 0) return scanConvFindEarlier();
+          return r.count > 0;
+        }
+        return false;
+      }
+      const n = convFindMatches.length;
+      convFindIdx = ((convFindIdx < 0 ? 0 : convFindIdx) + delta + n * 4) % n;
+      applyConvFindHighlights();
+      updateConvFindStatusUi(false);
+      scrollMatchIntoView(convFindMatches[convFindIdx]);
+      return true;
+    }
+
+    function openConvFind() {
+      if (isDead()) return false;
+      const conv = findConvView();
+      if (!conv) return false;
+      ensureStyleMounted();
+      closeDiffContextMenu();
+      const activeEl = doc?.activeElement;
+      if (activeEl && (!convFindRoot || !convFindRoot.contains?.(activeEl))) {
+        convFindPrevFocus = activeEl;
+      }
+      const bar = ensureConvFindUi(conv);
+      if (!bar) return false;
+      convFindOpen = true;
+      mut(() => {
+        bar.hidden = false;
+      });
+      try {
+        const sel = String(win?.getSelection?.() || '').trim();
+        if (sel && sel.length <= 120 && !/[\r\n]/.test(sel)) {
+          if (!convFindRoot.contains?.(activeEl)) {
+            convFindInput.value = sel;
+          }
+        }
+      } catch {}
+      try {
+        convFindInput?.focus?.({ preventScroll: true });
+        convFindInput?.select?.();
+      } catch {}
+      if (convFindInput?.value) runConvFind(true);
+      else updateConvFindStatusUi(false);
+      return true;
+    }
+
+    function closeConvFind(restoreFocus = false) {
+      cancelEarlierScan(false);
+      if (convFindDebounceTimer) {
+        clearTimeout(convFindDebounceTimer);
+        convFindDebounceTimer = 0;
+      }
+      if (convFindScrollFixTimer) {
+        clearTimeout(convFindScrollFixTimer);
+        convFindScrollFixTimer = 0;
+      }
+      convFindOpen = false;
+      convFindComposing = false;
+      convFindMatches = [];
+      convFindIdx = -1;
+      clearConvFindHighlights();
+      clearConvFindSonar();
+      if (convFindRoot) {
+        mut(() => {
+          convFindRoot.hidden = true;
+        });
+      }
+      if (restoreFocus && convFindPrevFocus && convFindPrevFocus.isConnected !== false) {
+        try {
+          convFindPrevFocus.focus?.({ preventScroll: true });
+        } catch {}
+      }
+      if (!restoreFocus) convFindPrevFocus = null;
+      return true;
+    }
+
+    function syncConvFindState() {
+      if (!convFindOpen) return;
+      const conv = findConvView();
+      if (!conv) {
+        closeConvFind(false);
+        return;
+      }
+      ensureConvFindUi(conv);
+      const cid = readActiveCascadeId(conv);
+      if (cid !== convFindLastCid) {
+        convFindLastCid = cid;
+        if (convFindInput?.value) runConvFind(false);
+        else {
+          convFindMatches = [];
+          convFindIdx = -1;
+          clearConvFindHighlights();
+          updateConvFindStatusUi(false);
+        }
+      }
+    }
+
     function onWinKeyDownCapture(ev) {
       try {
         if (isDead() || !ev) return;
+        const isFindHotkey =
+          (ev.ctrlKey || ev.metaKey) &&
+          ev.shiftKey &&
+          !ev.altKey &&
+          (ev.key === 'f' || ev.key === 'F' || ev.code === 'KeyF');
+        if (isFindHotkey) {
+          const conv = findConvView();
+          if (conv) {
+            const tgtDlg = ev.target?.closest?.('[role="dialog"]');
+            if (!tgtDlg || (convFindRoot && convFindRoot.contains?.(ev.target))) {
+              if (openConvFind()) {
+                ev.preventDefault?.();
+                ev.stopPropagation?.();
+              }
+            }
+          }
+          return;
+        }
+        if (ev.key === 'F3' && convFindOpen) {
+          ev.preventDefault?.();
+          ev.stopPropagation?.();
+          stepConvFind(ev.shiftKey ? -1 : 1);
+          return;
+        }
         if (ev.key === 'Escape' && diffCtxMenuEl) {
           if (closeDiffContextMenu()) {
             ev.preventDefault?.();
             ev.stopPropagation?.();
           }
+          return;
+        }
+        if (ev.key === 'Escape' && convFindOpen) {
+          closeConvFind(true);
+          ev.preventDefault?.();
+          ev.stopPropagation?.();
         }
       } catch {}
     }
@@ -1312,6 +2348,8 @@
       }
       ensureStyleMounted();
       syncInlineDiffChips();
+      syncConvFindState();
+      refreshConvFindLocale();
     }
 
     function closeMenuIfOpen() {
@@ -1325,6 +2363,9 @@
         pendingSize: inlineDiffPending.size,
         menuOpen: Boolean(diffCtxMenuEl),
         styleMounted: Boolean(doc?.getElementById?.(INLINE_DIFF_STYLE_ID)),
+        findOpen: Boolean(convFindOpen),
+        findMatchCount: convFindMatches.length,
+        findIndex: convFindIdx,
         destroyed: Boolean(localDestroyed),
       };
     }
@@ -1340,6 +2381,18 @@
         chipSyncDebounceTimer = 0;
       }
       closeDiffContextMenu();
+      closeConvFind(false);
+      convFindRoot = null;
+      convFindField = null;
+      convFindInput = null;
+      convFindCountEl = null;
+      convFindCaseBtn = null;
+      convFindWordBtn = null;
+      convFindRegexBtn = null;
+      convFindEarlierBtn = null;
+      convFindPrevBtn = null;
+      convFindNextBtn = null;
+      convFindCloseBtn = null;
       for (const entry of inlineDiffPending.values()) {
         if (entry?.timer) clearTimeout(entry.timer);
         try {
@@ -1370,7 +2423,7 @@
       }
       if (doc && typeof doc.querySelectorAll === 'function') {
         mut(() => {
-          for (const sel of ['.ag-cs-inline-diff-box', '.ag-cs-diff-ctx-menu']) {
+          for (const sel of ['.ag-cs-inline-diff-box', '.ag-cs-diff-ctx-menu', '.ag-cs-conv-find']) {
             qa(doc, sel).forEach((n) => n.remove());
           }
           qa(doc, '[data-testid="diff-line-count"], [data-ag-diff-chip-file="1"]').forEach((el) => {
@@ -1381,7 +2434,7 @@
             delete el._agSyncedTxt;
             delete el._agSyncedChip;
           });
-          for (const k of 'diff-chip|diff-chip-file|diff-chip-row|diff-stat|inline-diff-open|inline-diff-host|diff-anim|diff-state|cs-inline-diff'.split(
+          for (const k of 'diff-chip|diff-chip-file|diff-chip-row|diff-stat|inline-diff-open|inline-diff-host|diff-anim|diff-state|cs-inline-diff|find-sonar|find-fixed'.split(
             '|'
           )) {
             const a = 'data-ag-' + k;
@@ -1414,6 +2467,11 @@
       unbindHooks,
       toggleInlineDiffPreview,
       closeMenuIfOpen,
+      openConvFind,
+      closeConvFind,
+      runConvFind,
+      stepConvFind,
+      scanConvFindEarlier,
       getDebugState,
       destroy,
     };

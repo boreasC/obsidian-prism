@@ -9584,7 +9584,9 @@ function readCompiledInlineDiffClient(opts = null) {
 const INLINE_DIFF_REMOVE_EXPRESSION = `(() => {
   try { window.__agPrismInlineDiff?.destroy?.(); } catch {}
   try { document.getElementById?.('ag-prism-inline-diff-css')?.remove?.(); } catch {}
-  try { document.querySelectorAll?.('.ag-cs-inline-diff-box, .ag-cs-diff-ctx-menu')?.forEach?.((el) => el.remove()); } catch {}
+  try { document.querySelectorAll?.('.ag-cs-inline-diff-box, .ag-cs-diff-ctx-menu, .ag-cs-conv-find')?.forEach?.((el) => el.remove()); } catch {}
+  try { document.querySelectorAll?.('[data-ag-find-sonar]')?.forEach?.((el) => el.removeAttribute('data-ag-find-sonar')); } catch {}
+  try { if (typeof CSS !== 'undefined' && CSS?.highlights?.delete) { CSS.highlights.delete('ag-find-match'); CSS.highlights.delete('ag-find-active'); } } catch {}
   try { delete window.__agPrismInlineDiff; } catch {}
   try { delete globalThis.__agPrismInlineDiff; } catch {}
   try { delete window.__agPrismInlineDiffFactory; } catch {}
@@ -9679,7 +9681,9 @@ function buildInlineDiffInjectExpression(config = null, opts = null) {
     const cleanupInlineDiff = () => {
       try { (window.__agPrismInlineDiff || globalThis.__agPrismInlineDiff)?.destroy?.(); } catch {}
       try { document.getElementById?.('ag-prism-inline-diff-css')?.remove?.(); } catch {}
-      try { document.querySelectorAll?.('.ag-cs-inline-diff-box, .ag-cs-diff-ctx-menu')?.forEach?.((el) => el.remove()); } catch {}
+      try { document.querySelectorAll?.('.ag-cs-inline-diff-box, .ag-cs-diff-ctx-menu, .ag-cs-conv-find')?.forEach?.((el) => el.remove()); } catch {}
+      try { document.querySelectorAll?.('[data-ag-find-sonar]')?.forEach?.((el) => el.removeAttribute('data-ag-find-sonar')); } catch {}
+      try { if (typeof CSS !== 'undefined' && CSS?.highlights?.delete) { CSS.highlights.delete('ag-find-match'); CSS.highlights.delete('ag-find-active'); } } catch {}
       try { delete window.__agPrismInlineDiff; } catch {}
       try { delete globalThis.__agPrismInlineDiff; } catch {}
       try { delete window.__agPrismInlineDiffFactory; } catch {}
@@ -11205,7 +11209,7 @@ const REMOVE_EXPRESSION = `(() => {
   });
   try {
     if (typeof CSS !== 'undefined' && CSS && CSS.highlights && typeof CSS.highlights.delete === 'function') {
-      ['ag-stream-f0', 'ag-stream-f1', 'ag-stream-f2', 'ag-stream-f3', 'ag-stream-f4'].forEach((k) => CSS.highlights.delete(k));
+      ['ag-stream-f0', 'ag-stream-f1', 'ag-stream-f2', 'ag-stream-f3', 'ag-stream-f4', 'ag-find-match', 'ag-find-active'].forEach((k) => CSS.highlights.delete(k));
       if (typeof CSS.highlights.keys === 'function') {
         for (const k of Array.from(CSS.highlights.keys())) {
           if (typeof k === 'string' && k.startsWith('ag-omni-')) CSS.highlights.delete(k);
@@ -11223,10 +11227,11 @@ const REMOVE_EXPRESSION = `(() => {
     s.removeAttribute('data-ag-turbo-dedup');
   });
   document.querySelectorAll('img[data-ag-turbo-img]').forEach((img) => img.removeAttribute('data-ag-turbo-img'));
+  document.querySelectorAll('[data-ag-find-sonar]').forEach((el) => el.removeAttribute('data-ag-find-sonar'));
   const nodes = document.querySelectorAll(
     '#' + ${JSON.stringify(STYLE_ID)} +
     ', #' + ${JSON.stringify(LEGACY_STYLE_ID)} +
-    ', #ag-prism-host-alert-css, #ag-prism-settings-v101-css, #ag-prism-studio-v101-css, #ag-prism-omni-css, #ag-prism-sidebar-studio-css, #ag-prism-periodic-picker-css, #ag-prism-periodic-picker-root, .ag-pp-hold-ring, .ag-pp-mini-keycap, #ag-prism-inline-diff-css, #ag-prism-wallpaper-root, #ag-prism-wallpaper-css, #ag-prism-suggester-css, #ag-prism-model-dd-css, [data-testid="prism-suggest-trigger"], [data-testid="prism-ghost-overlay"], #ag-prism-storage-guard, #ag-prism-storage-guard-css, #ag-cs-settings-sec, [data-testid="prism-thought-ai-config"], [data-testid="prism-thought-general-config"], .ag-omni-dock, .ag-omni-menu, .ag-prism-omni-menu, .ag-prism-omni-pane, [data-ag-prism-omni-owned="1"], [data-ag-prism-sidebar-owned="1"], .ag-prism-sidebar-studio, .ag-prism-sidebar-rail, .ag-prism-sidebar-popover, .ag-prism-sidebar-modal, .ag-cs-home-panel, .ag-cs-home-panel-seat, .ag-cs-ripple-layer, .ag-cs-ripple-host, .ag-cs-conv-aura-host, .ag-cs-crab, .ag-cs-dual-stage, .ag-cs-crab-stage, .ag-cs-mascot-stage, .ag-cs-mascot, .ag-v2-mascot-stage, .ag-v2-habitat-prop, .ag-cs-crystal-bar, [data-testid="orchestrator-effort-bar"], .ag-cs-prism-rim-cv, .ag-cs-code-fold-btn, .ag-cs-nav-outline-popover, .ag-cs-nav-outline-trigger, .ag-cs-smooth-caret, .ag-cs-perf-backdrop, .ag-cs-ctx-menu, .ag-cs-ctx-toast'
+    ', #ag-prism-host-alert-css, #ag-prism-settings-v101-css, #ag-prism-studio-v101-css, #ag-prism-omni-css, #ag-prism-sidebar-studio-css, #ag-prism-periodic-picker-css, #ag-prism-periodic-picker-root, .ag-pp-hold-ring, .ag-pp-mini-keycap, #ag-prism-inline-diff-css, #ag-prism-wallpaper-root, #ag-prism-wallpaper-css, #ag-prism-suggester-css, #ag-prism-model-dd-css, [data-testid="prism-suggest-trigger"], [data-testid="prism-ghost-overlay"], #ag-prism-storage-guard, #ag-prism-storage-guard-css, #ag-cs-settings-sec, [data-testid="prism-thought-ai-config"], [data-testid="prism-thought-general-config"], .ag-omni-dock, .ag-omni-menu, .ag-prism-omni-menu, .ag-prism-omni-pane, [data-ag-prism-omni-owned="1"], [data-ag-prism-sidebar-owned="1"], .ag-prism-sidebar-studio, .ag-prism-sidebar-rail, .ag-prism-sidebar-popover, .ag-prism-sidebar-modal, .ag-cs-home-panel, .ag-cs-home-panel-seat, .ag-cs-ripple-layer, .ag-cs-ripple-host, .ag-cs-conv-aura-host, .ag-cs-crab, .ag-cs-dual-stage, .ag-cs-crab-stage, .ag-cs-mascot-stage, .ag-cs-mascot, .ag-v2-mascot-stage, .ag-v2-habitat-prop, .ag-cs-crystal-bar, [data-testid="orchestrator-effort-bar"], .ag-cs-prism-rim-cv, .ag-cs-code-fold-btn, .ag-cs-nav-outline-popover, .ag-cs-nav-outline-trigger, .ag-cs-conv-find, .ag-cs-smooth-caret, .ag-cs-perf-backdrop, .ag-cs-ctx-menu, .ag-cs-ctx-toast'
   );
   nodes.forEach((n) => n.remove());
   return { removed: nodes.length };
