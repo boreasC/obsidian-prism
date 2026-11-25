@@ -629,25 +629,107 @@ effort: effort,
 effortLabel: AG_EFFORT_LABELS[effort] || match[2]
 };
 }
+var _AG_TRIG_SEL = '[data-testid="model-selector-trigger"],button[aria-label^="Select model"]';
+var _AG_PANE_SEL = '[data-testid="agent-input-box"],[data-testid="conversation-view"],.surface-composer-card,[data-tiling-pane]';
+var _lastTrigStateByDoc = typeof WeakMap === "function" ? new WeakMap() : null;
 function _isSubTrigger(el) { return Boolean(el && el.closest && el.closest('[data-testid="subagent-tab-conversation"]')); }
-function findAntigravityTrigger(doc) {
-var d = doc || (typeof document !== "undefined" ? document : null), sel = '[data-testid="model-selector-trigger"],button[aria-label^="Select model"]';
+function _isTrigVisible(el) {
+if (!el || el.isConnected === false || el.hidden === true) return false;
+if (el.style && (el.style.display === "none" || el.style.visibility === "hidden")) return false;
+if (el.closest && el.closest("[hidden], .hidden")) return false;
+if (el.checkVisibility) { try { if (!el.checkVisibility()) return false; } catch (e) {} }
+return true;
+}
+function _isTrigExpanded(el) {
+if (!el || !el.getAttribute) return false;
+return el.getAttribute("aria-expanded") === "true" || el.getAttribute("data-state") === "open" || (el.hasAttribute && el.hasAttribute("data-popup-open") && el.getAttribute("data-popup-open") !== "false");
+}
+function _rememberActiveTrigger(doc, triggerEl, paneEl) {
+if (!doc || !_lastTrigStateByDoc) return;
+var prev = _lastTrigStateByDoc.get(doc) || { trigger: null, pane: null };
+if (triggerEl !== undefined) prev.trigger = triggerEl;
+if (paneEl !== undefined) prev.pane = paneEl;
+_lastTrigStateByDoc.set(doc, prev);
+}
+function _findTriggerInNode(scope) {
+if (!scope) return null;
+if (scope.matches && scope.matches(_AG_TRIG_SEL) && !_isSubTrigger(scope) && scope.isConnected !== false) return scope;
+if (scope.querySelectorAll) {
+var ls = scope.querySelectorAll(_AG_TRIG_SEL), fb = null;
+for (var i = 0; i < ls.length; i += 1) {
+var el = ls[i];
+if (!el || _isSubTrigger(el)) continue;
+if (_isTrigVisible(el)) return el;
+if (!fb) fb = el;
+}
+return fb;
+}
+var q = scope.querySelector && scope.querySelector(_AG_TRIG_SEL);
+return q && !_isSubTrigger(q) ? q : null;
+}
+function findAntigravityTrigger(doc, hintEl) {
+var d = doc || (typeof document !== "undefined" ? document : null);
 if (!d) return null;
+if (hintEl && hintEl.isConnected !== false) {
+var hDirect = _findTriggerInNode(hintEl);
+if (hDirect) return hDirect;
+var hPane = hintEl.closest && hintEl.closest(_AG_PANE_SEL);
+if (hPane) {
+var hPaneHit = _findTriggerInNode(hPane);
+if (hPaneHit) return hPaneHit;
+}
+}
+var visList = [], firstHidden = null;
 if (d.querySelectorAll) {
-var list = d.querySelectorAll(sel), fb = null;
+var list = d.querySelectorAll(_AG_TRIG_SEL);
 for (var i = 0; i < list.length; i += 1) {
 var el = list[i];
 if (!el || _isSubTrigger(el)) continue;
-if (el.checkVisibility) { try { if (!el.checkVisibility()) { if (!fb) fb = el; continue; } } catch (e) {} }
-return el;
+if (_isTrigVisible(el)) {
+if (_isTrigExpanded(el)) return el;
+visList.push(el);
+} else if (!firstHidden) {
+firstHidden = el;
 }
-if (fb) return fb;
 }
+}
+if (visList.length > 1) {
+var openPanel = findAntigravityPanel(d);
+if (openPanel) {
+var pCtx = _rdAgFiber(openPanel);
+if (pCtx && pCtx.conversationId) {
+for (var pIdx = 0; pIdx < visList.length; pIdx += 1) {
+var tCtx = _rdAgFiber(visList[pIdx]);
+if (tCtx && tCtx.conversationId === pCtx.conversationId) return visList[pIdx];
+}
+}
+}
+var rec = _lastTrigStateByDoc ? _lastTrigStateByDoc.get(d) : null;
+if (rec) {
+if (rec.trigger && rec.trigger.isConnected !== false && !_isSubTrigger(rec.trigger) && _isTrigVisible(rec.trigger)) return rec.trigger;
+if (rec.pane && rec.pane.isConnected !== false && !_isSubTrigger(rec.pane)) {
+var fromRecPane = _findTriggerInNode(rec.pane);
+if (fromRecPane && _isTrigVisible(fromRecPane)) return fromRecPane;
+}
+}
+var actEl = d.activeElement;
+if (actEl && actEl !== d.body && actEl !== d.documentElement) {
+var actDirect = _findTriggerInNode(actEl);
+if (actDirect && _isTrigVisible(actDirect)) return actDirect;
+var actPane = actEl.closest && actEl.closest(_AG_PANE_SEL);
+if (actPane && !_isSubTrigger(actPane)) {
+var fromActPane = _findTriggerInNode(actPane);
+if (fromActPane && _isTrigVisible(fromActPane)) return fromActPane;
+}
+}
+}
+if (visList.length > 0) return visList[0];
+if (firstHidden) return firstHidden;
 var q = d.querySelector && (d.querySelector('[data-testid="model-selector-trigger"]') || d.querySelector('button[aria-label^="Select model"]'));
 return q && !_isSubTrigger(q) ? q : null;
 }
-function _isTrigLocked(doc) {
-var tr = findAntigravityTrigger(doc);
+function _isTrigLocked(doc, hintEl) {
+var tr = (hintEl && hintEl.isConnected !== false && hintEl.matches && hintEl.matches(_AG_TRIG_SEL) && !_isSubTrigger(hintEl)) ? hintEl : findAntigravityTrigger(doc, hintEl);
 if (!tr) return false;
 if (tr.disabled === true || (tr.hasAttribute && tr.hasAttribute("disabled")) || (tr.getAttribute && tr.getAttribute("aria-disabled") === "true")) return true;
 var dd = tr.getAttribute && tr.getAttribute("data-disabled");
@@ -691,10 +773,10 @@ if (INFERENCE_LABELS.indexOf(t) < 0) cand = c;
 }
 return cand;
 }
-function syncTriggerColor(doc, label, index, count, isMax, hasOffFirst, isClaude) {
+function syncTriggerColor(doc, label, index, count, isMax, hasOffFirst, isClaude, triggerEl) {
 var d = doc || (typeof document !== "undefined" ? document : null);
 if (!d) return;
-var ag = findAntigravityTrigger(d), col = valueColorFor(label, index, count, isMax, hasOffFirst, typeof isClaude === "boolean" ? isClaude : isClaudeModel(ag ? ag.textContent : ""), resolvePrismAccentTone(d, null)) || "";
+var ag = triggerEl || findAntigravityTrigger(d), col = valueColorFor(label, index, count, isMax, hasOffFirst, typeof isClaude === "boolean" ? isClaude : isClaudeModel(ag ? ag.textContent : ""), resolvePrismAccentTone(d, null)) || "";
 if (ag) {
 var sp = ag.querySelector("span.opacity-70, [data-ces-part='trigger-effort']");
 if (sp) { sp.setAttribute("data-ces-part", "trigger-effort"); sp.style.color = col; sp.style.opacity = col ? "1" : ""; sp.style.fontWeight = col ? "600" : ""; }
@@ -879,7 +961,7 @@ levels: [{ effort: sE, label: sL, modelOption: modelObj }],
 currentIndex: 0, currentEffort: sE, currentLabel: sL, modelOption: modelObj
 };
 }
-function _commitAgOpt(ctx, targetOption, isOrchPlan, keepOpen) {
+function _commitAgOpt(ctx, targetOption, isOrchPlan, keepOpen, triggerEl) {
 if (!ctx || !targetOption?.label) return false;
 var shouldKeep = keepOpen !== false;
 try {
@@ -895,7 +977,9 @@ ctx.setModelConfigByLabelForConversation(targetOption.label, ctx.conversationId,
 return true;
 }
 if (typeof ctx.unwrappedSetSelectedModel === "function") {
-var d = typeof document !== "undefined" ? document : null, ed = d?.querySelector?.('[contenteditable="true"]');
+var d = typeof document !== "undefined" ? document : null;
+var pScope = triggerEl && triggerEl.closest ? triggerEl.closest('[data-testid="agent-input-box"],[data-testid="conversation-view"]') : null;
+var ed = pScope?.querySelector?.('[contenteditable="true"]') || d?.querySelector?.('[contenteditable="true"]');
 var prevFocus = d?.activeElement, onFocus = (ev) => { ev?.stopPropagation?.(); try { ed?.blur?.(); } catch {} };
 ed?.addEventListener?.("focus", onFocus, true);
 try {
@@ -946,8 +1030,10 @@ if (sp.style) sp.style.color = sp.style.opacity = sp.style.fontWeight = "";
 sp.removeAttribute?.("data-ces-part");
 delete sp.__cesLastText;
 }
-var te = findAntigravityTrigger(doc)?.querySelector?.("span.opacity-70, [data-ces-part='trigger-effort']");
+for (var trEl of doc.querySelectorAll(_AG_TRIG_SEL)) {
+var te = trEl?.querySelector?.("span.opacity-70, [data-ces-part='trigger-effort']");
 if (te) delete te.__cesLastText;
+}
 _clrSibs(doc);
 for (var v of doc.querySelectorAll('[data-ces-part="value"], .ces-ag-effort-value')) { delete v.__cesLastLabel; delete v.__cesLastKey; }
 for (var p of doc.querySelectorAll(".ces-ag-panel-enhanced")) p.classList?.remove("ces-ag-panel-enhanced");
@@ -1638,6 +1724,57 @@ var _boundSubs = new Set();
 var _hiddenL3 = new Map();
 var observer = null;
 var _intMut = false;
+var trackedTrigger = null;
+var trackedPane = null;
+function _trackTarget(ev) {
+try {
+var t = ev && ev.target;
+if (!t || typeof t.closest !== "function") return;
+var trig = t.closest(_AG_TRIG_SEL);
+if (trig && !_isSubTrigger(trig)) {
+trackedTrigger = trig;
+var p0 = trig.closest(_AG_PANE_SEL);
+if (p0 && !_isSubTrigger(p0)) trackedPane = p0;
+_rememberActiveTrigger(doc, trackedTrigger, trackedPane);
+return;
+}
+var pane = t.closest(_AG_PANE_SEL);
+if (pane && !_isSubTrigger(pane)) {
+trackedPane = pane;
+var innerTrig = _findTriggerInNode(pane);
+if (innerTrig) trackedTrigger = innerTrig;
+_rememberActiveTrigger(doc, trackedTrigger, trackedPane);
+}
+} catch (e) {}
+}
+var _trackOpts = { capture: true, passive: true };
+doc.addEventListener?.("pointerdown", _trackTarget, _trackOpts);
+doc.addEventListener?.("focusin", _trackTarget, _trackOpts);
+function _resolveCurTrigger() {
+var p = findAntigravityPanel(doc);
+if (p) {
+var fromOpen = findAntigravityTrigger(doc);
+if (fromOpen && _isTrigExpanded(fromOpen)) { trackedTrigger = fromOpen; return fromOpen; }
+var pCtx = _rdAgFiber(p);
+if (pCtx && pCtx.conversationId && doc.querySelectorAll) {
+var allTr = doc.querySelectorAll(_AG_TRIG_SEL);
+for (var i = 0; i < allTr.length; i += 1) {
+var cTr = allTr[i];
+if (!cTr || _isSubTrigger(cTr) || !_isTrigVisible(cTr)) continue;
+var tc = _rdAgFiber(cTr);
+if (tc && tc.conversationId === pCtx.conversationId) { trackedTrigger = cTr; return cTr; }
+}
+}
+}
+if (trackedTrigger && trackedTrigger.isConnected !== false && !_isSubTrigger(trackedTrigger) && _isTrigVisible(trackedTrigger)) {
+return trackedTrigger;
+}
+if (trackedPane && trackedPane.isConnected !== false && !_isSubTrigger(trackedPane)) {
+var pt = _findTriggerInNode(trackedPane);
+if (pt && _isTrigVisible(pt)) { trackedTrigger = pt; return pt; }
+}
+return findAntigravityTrigger(doc);
+}
 function _setTxt(el, s) { _setTxtNode(el, s, doc); }
 function _setEffTxt(el, s) { _setEffTxtNode(el, s, doc); }
 function notifySeatListeners() { _seatLs.forEach(function (fn) { try { fn(); } catch (e) {} }); }
@@ -1654,7 +1791,7 @@ if (on) { if (r.setAttribute && r.getAttribute("data-ces-slider-ready") !== "1")
 else if (r.removeAttribute && (!r.hasAttribute || r.hasAttribute("data-ces-slider-ready"))) r.removeAttribute("data-ces-slider-ready");
 }
 function getLiveContext() {
-var p = findAntigravityPanel(doc), t = findAntigravityTrigger(doc);
+var p = findAntigravityPanel(doc), t = _resolveCurTrigger();
 return (p && _rdAgFiber(p)) || (t && _rdAgFiber(t)) || null;
 }
 function getActiveProfile(ctx) {
@@ -1674,7 +1811,7 @@ else _recEff(_effMap, profile.baseName, profile.currentEffort);
 }
 var count = profile.levels.length, idx = profile.currentIndex, isMax = !profile.locked && count > 1 && idx === count - 1 && !isOffLevel(profile.currentLabel);
 var _sa = (el, k, v) => { if (el && el.getAttribute(k) !== v) el.setAttribute(k, v); };
-var triggerBtn = findAntigravityTrigger(doc);
+var triggerBtn = _resolveCurTrigger();
 if (triggerBtn) {
 if (profile.isOrchestrator && profile.orchestratorTunable) _sa(triggerBtn, "data-ces-orch-b", profile.isClaude ? "claude" : "gemini");
 else triggerBtn.removeAttribute("data-ces-orch-b");
@@ -1699,7 +1836,7 @@ if (effortSpan) _setEffTxt(effortSpan, expEff);
 }
 }
 var trigLbl = profile.locked ? (profile.modelOption && parseModelLabel(profile.modelOption.label) ? profile.currentLabel : "") : profile.currentLabel;
-syncTriggerColor(doc, trigLbl, idx, count, isMax, false, Boolean(profile.isClaude));
+syncTriggerColor(doc, trigLbl, idx, count, isMax, false, Boolean(profile.isClaude), triggerBtn);
 var panel = findAntigravityPanel(doc);
 if (!panel) return;
 var _s = (st, c) => { var o = c ? "1" : "", w = c ? "600" : ""; if (st.color !== c) st.color = c; if (st.opacity !== o) st.opacity = o; if (st.fontWeight !== w) st.fontWeight = w; };
@@ -1733,15 +1870,16 @@ _mkSel(sItem, !profile.isOrchestrator && (profile.modelOption?.label === sLabel 
 function _curProf() { return getActiveProfile(getLiveContext()); }
 function _syP() { try { win?.__agPrism?.sync?.(); } catch {} }
 var agSeatAdapter = {
-_read: function () { var p = _curProf(); return p && _isTrigLocked(doc) ? Object.assign({}, p, { locked: true }) : p; },
+_read: function () { var p = _curProf(); return p && _isTrigLocked(doc, _resolveCurTrigger()) ? Object.assign({}, p, { locked: true }) : p; },
 get effortLevels() { return _curProf()?.levels || []; },
 get currentEffort() { return _curProf()?.currentEffort || ""; },
-get locked() { return _isTrigLocked(doc) || (_curProf()?.locked ?? true); },
+get locked() { return _isTrigLocked(doc, _resolveCurTrigger()) || (_curProf()?.locked ?? true); },
 get baseName() { return _curProf()?.baseName || ""; },
 get isClaude() { return Boolean(_curProf()?.isClaude); },
 get theme() { return _curProf()?.theme || "codex"; },
 selectEffort: function (levelItem) {
-if (_isTrigLocked(doc)) return;
+var curTrig = _resolveCurTrigger();
+if (_isTrigLocked(doc, curTrig)) return;
 var ctx = getLiveContext(), targetOpt = levelItem && (levelItem.modelOption || levelItem.raw?.modelOption);
 if (!ctx || !targetOpt) return;
 var curProf = getActiveProfile(ctx);
@@ -1749,7 +1887,7 @@ if (curProf?.isOrchestrator && curProf.orchestratorTunable) {
 var opP = parseModelLabel(targetOpt.label);
 if (opP) _recEff(_orchEffMap, opP.base, opP.effort);
 _orchPlanOvr = targetOpt;
-_commitAgOpt(ctx, targetOpt, true);
+_commitAgOpt(ctx, targetOpt, true, true, curTrig);
 _withMut(() => { var np = resolveModelEffortProfile(ctx, _actOptOvr || ctx.selectedModel, _curEffMap(), targetOpt); _syncAgDom(ctx, np); _sySubs(activePanel, ctx, np); notifySeatListeners(); _syP(); });
 return;
 }
@@ -1758,7 +1896,7 @@ if (parsed) { _recEff(_effMap, parsed.base, parsed.effort); activeBaseOverride =
 _actOptOvr = targetOpt;
 _lastHostLbl = (ctx.selectedModel && ctx.selectedModel.label) || "";
 _orchPlanOvr = null;
-_commitAgOpt(ctx, targetOpt);
+_commitAgOpt(ctx, targetOpt, false, true, curTrig);
 _withMut(function () {
 _syncAgDom(ctx, resolveModelEffortProfile(ctx, targetOpt, _curEffMap()));
 _syP();
@@ -2304,6 +2442,10 @@ observer.observe(doc.body, { childList: true, subtree: true, characterData: true
 return {
 stop: () => {
 observer?.disconnect(); observer = null;
+doc.removeEventListener?.("pointerdown", _trackTarget, _trackOpts);
+doc.removeEventListener?.("focusin", _trackTarget, _trackOpts);
+trackedTrigger = trackedPane = null;
+if (_lastTrigStateByDoc) _lastTrigStateByDoc.delete(doc);
 if (memOnly) { if (onMemCk) doc.removeEventListener?.("click", onMemCk, true); lk = null; _clrSibs(doc); }
 else { _unmntSec(); _clrAgDom(doc); }
 },

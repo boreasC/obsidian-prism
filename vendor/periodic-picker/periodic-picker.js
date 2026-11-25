@@ -122,18 +122,22 @@
 
     function isNodeConnectedToDoc(docRef, node) {
       if (!node || typeof node !== 'object') return false;
-      if (node.isConnected === true) return true;
       if (node.isConnected === false) return false;
-      var cur = node;
-      var guard = 0;
-      while (cur && guard < 40) {
-        if (docRef && (cur === docRef || cur === docRef.body || cur === docRef.documentElement)) {
-          return true;
+      if (node.parentNode) {
+        var cur = node;
+        var guard = 0;
+        while (cur && guard < 64) {
+          if (cur.isConnected === false) return false;
+          if (docRef && (cur === docRef || cur === docRef.body || cur === docRef.documentElement)) {
+            return true;
+          }
+          cur = cur.parentNode;
+          guard += 1;
         }
-        cur = cur.parentNode;
-        guard += 1;
+        return false;
       }
-      return false;
+      if (node.isConnected === true) return true;
+      return Boolean(docRef && (node === docRef || node === docRef.body || node === docRef.documentElement));
     }
 
     function smoothRimWeight(distPx, maxDistPx) {
@@ -1905,6 +1909,7 @@
           slotByZ: SLOT_BY_Z,
           activeCommittedElementZ: activeCommittedElementZ,
           activeCommittedAuxBadge: activeCommittedAuxBadge,
+          anchorBtn: activeAnchorBtn,
           syncMiniKeycapBadges: syncMiniKeycapBadges,
           inferOrchCompactBadgeFromHost: inferOrchCompactBadgeFromHost,
         });
@@ -3405,10 +3410,10 @@
         if (hoverOnly) {
           telemetry = cachedHostTelemetry || { available: false, reason: 'offline' };
         } else if (optsObj && optsObj.deferTelemetryDomScan) {
-          telemetry = hostBridge.readHostContextTelemetry(doc, root, { skipDomScan: true });
+          telemetry = hostBridge.readHostContextTelemetry(doc, root, { skipDomScan: true, anchorBtn: activeAnchorBtn });
           cachedHostTelemetry = telemetry;
         } else {
-          telemetry = hostBridge.readHostContextTelemetry(doc, root);
+          telemetry = hostBridge.readHostContextTelemetry(doc, root, { anchorBtn: activeAnchorBtn });
           cachedHostTelemetry = telemetry;
         }
 
@@ -4008,12 +4013,15 @@
       function resolveDrawerMountHost(docRef, triggerEl) {
         if (!docRef) return { host: null, inFlow: false };
         try {
+          var effectiveTrigger =
+            (triggerEl && isNodeConnectedToDoc(docRef, triggerEl) ? triggerEl : null) ||
+            hostBridge.findFallbackModelTrigger(docRef, triggerEl);
           var convEl =
-            (triggerEl && typeof triggerEl.closest === 'function' && triggerEl.closest('[data-testid="conversation-view"]')) ||
+            (effectiveTrigger && typeof effectiveTrigger.closest === 'function' && effectiveTrigger.closest('[data-testid="conversation-view"]')) ||
             (typeof docRef.querySelector === 'function' ? docRef.querySelector('[data-testid="conversation-view"]') : null);
           if (convEl && typeof convEl.appendChild === 'function') return { host: convEl, inFlow: true };
           var inputBox =
-            (triggerEl && typeof triggerEl.closest === 'function' && triggerEl.closest('[data-testid="agent-input-box"]')) ||
+            (effectiveTrigger && typeof effectiveTrigger.closest === 'function' && effectiveTrigger.closest('[data-testid="agent-input-box"]')) ||
             (typeof docRef.querySelector === 'function' ? docRef.querySelector('[data-testid="agent-input-box"]') : null);
           if (inputBox) {
             var cur = inputBox.parentElement;
@@ -4326,10 +4334,16 @@
               ? activeAnchorBtn.closest('[data-testid="agent-input-box"]')
               : null;
           targetNode = inputAncestor || activeAnchorBtn;
-        } else if (typeof doc.querySelector === 'function') {
+        } else {
+          var liveOverlayHint = overlayEl && isNodeConnectedToDoc(doc, overlayEl) ? overlayEl : null;
+          var fbTrig = hostBridge.findFallbackModelTrigger(doc, liveOverlayHint);
           targetNode =
-            doc.querySelector('[data-testid="agent-input-box"]') ||
-            doc.querySelector('[data-testid="model-selector-trigger"]');
+            (fbTrig && typeof fbTrig.closest === 'function' && fbTrig.closest('[data-testid="agent-input-box"]')) ||
+            fbTrig ||
+            (typeof doc.querySelector === 'function'
+              ? doc.querySelector('[data-testid="agent-input-box"]') ||
+                doc.querySelector('[data-testid="model-selector-trigger"]')
+              : null);
         }
         /* Strictly forbid observing document.body or documentElement here */
         if (!targetNode || targetNode === doc.body || targetNode === doc.documentElement) return;
@@ -4466,9 +4480,10 @@
               clearOpenLockGuardTimer();
               return;
             }
+            var liveOv1 = overlayEl && isNodeConnectedToDoc(doc, overlayEl) ? overlayEl : null;
             var probeTrigger =
-              hostBridge.findFallbackModelTrigger(doc) ||
-              (activeAnchorBtn && isNodeConnectedToDoc(doc, activeAnchorBtn) ? activeAnchorBtn : null);
+              (activeAnchorBtn && isNodeConnectedToDoc(doc, activeAnchorBtn) ? activeAnchorBtn : null) ||
+              hostBridge.findFallbackModelTrigger(doc, liveOv1);
             if (isHostModelTriggerLocked(probeTrigger)) {
               clearOpenLockGuardTimer();
               cancelHold(false);
@@ -4483,11 +4498,13 @@
         sessionSyncTimer = 0;
         if (!overlayEl || isDestroyed || isDrawerClosing || isConfirmClosing || currentMode === 'off') return false;
 
-        /* Re-discover freshest [data-testid="model-selector-trigger"] after React session re-render */
-        var discoveredTrigger = hostBridge.findFallbackModelTrigger(doc);
+        /* Prefer current pane's activeAnchorBtn when still connected; re-discover within same pane or fallback after React session re-render */
+        var connectedAnchor = activeAnchorBtn && isNodeConnectedToDoc(doc, activeAnchorBtn) ? activeAnchorBtn : null;
+        var liveOv2 = overlayEl && isNodeConnectedToDoc(doc, overlayEl) ? overlayEl : null;
         var latestTrigger =
-          discoveredTrigger ||
-          (activeAnchorBtn && isNodeConnectedToDoc(doc, activeAnchorBtn) ? activeAnchorBtn : null);
+          connectedAnchor ||
+          hostBridge.findFallbackModelTrigger(doc, liveOv2) ||
+          hostBridge.findFallbackModelTrigger(doc);
 
         var triggerReplaced = Boolean(latestTrigger && latestTrigger !== activeAnchorBtn);
         if (latestTrigger) activeAnchorBtn = latestTrigger;
@@ -4586,9 +4603,10 @@
       function onHostTriggerChanged() {
         if (isDestroyed || currentMode === 'off') return;
         if (overlayEl && !isDrawerClosing) {
+          var liveOv3 = overlayEl && isNodeConnectedToDoc(doc, overlayEl) ? overlayEl : null;
           var liveTrigger =
-            hostBridge.findFallbackModelTrigger(doc) ||
-            (activeAnchorBtn && isNodeConnectedToDoc(doc, activeAnchorBtn) ? activeAnchorBtn : null);
+            (activeAnchorBtn && isNodeConnectedToDoc(doc, activeAnchorBtn) ? activeAnchorBtn : null) ||
+            hostBridge.findFallbackModelTrigger(doc, liveOv3);
           if (isHostModelTriggerLocked(liveTrigger)) {
             cancelHold(false);
             collapseDrawerAndClose();
@@ -4858,7 +4876,12 @@
 
       function open(anchorBtn) {
         if (isDestroyed || currentMode === 'off' || !doc || !doc.body) return false;
-        var triggerEl = anchorBtn || hostBridge.findFallbackModelTrigger(doc);
+        var triggerEl =
+          anchorBtn ||
+          hostBridge.findFallbackModelTrigger(
+            doc,
+            activeAnchorBtn && isNodeConnectedToDoc(doc, activeAnchorBtn) ? activeAnchorBtn : null
+          );
         if (isHostModelTriggerLocked(triggerEl)) {
           if (overlayEl) {
             close({ silent: true });
@@ -5899,7 +5922,7 @@
               syncHitLayerRects(true);
               // 首帧后异步补齐宿主 DOM 遥测扫描，避免阻塞 open() 首帧绘制
               if (cachedHostTelemetry && cachedHostTelemetry.domScanDeferred) {
-                var fullTele = hostBridge.readHostContextTelemetry(doc, root);
+                var fullTele = hostBridge.readHostContextTelemetry(doc, root, { anchorBtn: activeAnchorBtn });
                 cachedHostTelemetry = fullTele;
                 if (fullTele && (fullTele.available || fullTele.reason !== 'offline')) {
                   syncSceneAndDom(true);

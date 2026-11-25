@@ -1841,3 +1841,57 @@ test('red-team #229 [P1-2] & #230 [P0-1, P1-7, P2-3, P2-4]: no bootWpCfg token i
     delete globalThis.__prismMountWallpaperUi;
   }
 });
+
+test('Issue #59 regression: WALLPAPER_CSS penetrates v2.34+ inset-shell, sheet, nested flex-1 containers & .bg-sidebar in dark/light themes while keeping Browser Hole avoidance', () => {
+  const css = wallpaperClientMod.WALLPAPER_CSS;
+  const src = fs.readFileSync(path.join(ROOT, 'vendor', 'wallpaper', 'wallpaper-client.js'), 'utf8');
+
+  // Strict ASCII, 0 :has(), balanced braces, 0 innerHTML in executable code
+  assert.equal(/[^\x00-\x7f]/.test(css), false, 'WALLPAPER_CSS must remain strictly pure ASCII');
+  assert.equal(css.includes(':has('), false, 'WALLPAPER_CSS must contain 0 :has() selectors');
+  assert.equal(checkBalancedBraces(css), true, 'WALLPAPER_CSS must have balanced braces');
+  const codeWithoutComments = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '');
+  assert.equal(/\binnerHTML\b/.test(codeWithoutComments), false, 'wallpaper-client.js must contain 0 innerHTML usage');
+
+  // Dark + light outer shell & sheet containers must be transparent (no outer color-mix stacking)
+  assert.ok(
+    css.includes(
+      'html[data-ag-prism-wallpaper="on"]:not([data-ag-prism-wallpaper-hole="1"]) :is(.agy-shell,.agy-inset-shell,.agy-sheet,[data-ag-cs-home-sheet="1"],[data-main-content-body]):not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]){background:transparent !important;background-color:transparent !important;}'
+    ),
+    'Dark outer shell/inset-shell/sheet/home-sheet/main-content-body must be transparent with Browser Hole avoidance'
+  );
+  assert.ok(
+    css.includes(
+      'html[data-ag-prism-wallpaper="on"][data-ag-cs-theme="light"]:not([data-ag-prism-wallpaper-hole="1"]) :is(.agy-shell,.agy-inset-shell,.agy-sheet,[data-ag-cs-home-sheet="1"],[data-main-content-body]):not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"])'
+    ),
+    'Light mode [data-ag-cs-theme="light"] must also clear .agy-inset-shell and .agy-sheet backgrounds'
+  );
+  assert.ok(
+    css.includes(
+      'body:is(.theme-light,.light-theme,.light) :is(.agy-shell,.agy-inset-shell,.agy-sheet,[data-ag-cs-home-sheet="1"],[data-main-content-body]):not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]){background:transparent !important;background-color:transparent !important;}'
+    ),
+    'Light mode body class fallback must also clear .agy-inset-shell and .agy-sheet backgrounds'
+  );
+
+  // Nested two-layer flex-1 containers inside .agy-sheet must be transparent with Browser Hole avoidance
+  assert.ok(
+    css.includes(
+      'html[data-ag-prism-wallpaper="on"]:not([data-ag-prism-wallpaper-hole="1"]) .agy-sheet:not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"])>div.flex-1.min-h-0.flex.flex-col,html[data-ag-prism-wallpaper="on"]:not([data-ag-prism-wallpaper-hole="1"]) .agy-sheet:not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"])>div.flex-1.min-h-0.flex.flex-col>div.flex-1.min-w-0.h-full{background:transparent !important;background-color:transparent !important;}'
+    ),
+    'Nested .agy-sheet > div.flex-1.min-h-0.flex.flex-col and > div.flex-1.min-w-0.h-full must be transparent'
+  );
+
+  // Sidebar rule keeps existing substring order and appends .agy-shell .bg-sidebar in both dark and light rules
+  const sidebarMatches = css.match(/:is\(aside,\[data-testid="sidebar-split"\]>div:first-child,\.agy-shell \.bg-sidebar\)/g) || [];
+  assert.equal(sidebarMatches.length, 3, 'Dark + 2 light sidebar selectors must all include .agy-shell .bg-sidebar after existing order');
+
+  // Tuned conversation seat scrims (dark ~52%, light ~66%)
+  assert.ok(
+    css.includes('[data-ag-cs-conv-seat="1"]:not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]){background-color:color-mix(in srgb,var(--background,#0B0B0E) 52%,transparent) !important;}'),
+    'Dark conv-seat scrim should use 52% color-mix for balanced wallpaper visibility and readability'
+  );
+  assert.ok(
+    css.includes('[data-ag-cs-conv-seat="1"]:not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]){background-color:color-mix(in srgb,var(--background,#F4F7FB) 66%,transparent) !important;}'),
+    'Light conv-seat scrim should use 66% color-mix for balanced wallpaper visibility and readability'
+  );
+});

@@ -8,7 +8,7 @@ const { execFile, execFileSync, spawn } = require('child_process');
 
 const STYLE_ID = 'ag-prism-css';
 const LEGACY_STYLE_ID = 'ag-claude-style-css';
-const PLUGIN_VERSION = '1.0.8-beta.1';
+const PLUGIN_VERSION = '1.0.8-beta.2';
 const SETTING_BINDING = '__agPrismSetting';
 const LEGACY_SETTING_BINDING = '__agClaudeStyleSetting';
 const OMNI_BINDING = '__agPrismOmniCall';
@@ -46,6 +46,7 @@ const DEFAULT_CONFIG = {
   homeLayout: 'studio',
   homeMode: 'studio',
   homeRipple: true,
+  convRipple: 'off',
   ripple: 'on',
   composerRestyle: true,
   composer: 'on',
@@ -92,6 +93,7 @@ const VALIDATORS = {
   homeLayout: ['studio', 'classic', 'off'],
   homeMode: ['studio', 'classic', 'off'],
   homeRipple: 'boolean',
+  convRipple: ['off', 'subtle', 'medium', 'full'],
   ripple: ['on', 'off'],
   composerRestyle: 'boolean',
   composer: ['on', 'off'],
@@ -208,6 +210,20 @@ function reconcileConfigAliases(raw) {
     const on = out.ripple !== 'off' && out.ripple !== false;
     out.homeRipple = on;
     out.ripple = on ? 'on' : 'off';
+  }
+
+  if (has('convRipple')) {
+    const rawCr = out.convRipple;
+    if (rawCr === true) {
+      out.convRipple = 'medium';
+    } else if (rawCr === false) {
+      out.convRipple = 'off';
+    } else if (typeof rawCr === 'string') {
+      const lowCr = rawCr.trim().toLowerCase();
+      if (lowCr === 'true' || lowCr === 'on') out.convRipple = 'medium';
+      else if (lowCr === 'false' || lowCr === 'off') out.convRipple = 'off';
+      else if (lowCr === 'subtle' || lowCr === 'medium' || lowCr === 'full') out.convRipple = lowCr;
+    }
   }
 
   if (has('composerRestyle')) {
@@ -6047,6 +6063,7 @@ const DEFERRED_ROOT_MODULES = [
   'i18n-locales.js',
   'dual-mascot-rig.js',
   'settings-panel.js',
+  'home-studio-panel.js',
 ];
 
 const RUNTIME_PARTS = [
@@ -6062,7 +6079,6 @@ const RUNTIME_PARTS = [
   'pulse-vial-bridge.js',
   'vendor/pulse-dashboard/inline-fallback.js',
   'vendor/effort-slider/slider-coexist.js',
-  'home-studio-panel.js',
   'home-ripple-host.js',
   'model-glyph-crystal.js',
   'stream-choreography.js',
@@ -6098,7 +6114,7 @@ const BUNDLE_CACHE_MAX_FILE_BYTES = 6 * 1024 * 1024;
 const BUNDLE_CACHE_MAX_EXPR_BYTES = 2 * 1024 * 1024;
 const BUNDLE_CACHE_MAX_BOOTCFG_BYTES = 64 * 1024;
 const CHANNEL_CACHE_MAX_PAYLOAD_BYTES = 2 * 1024 * 1024;
-const CHANNEL_CACHE_NAMES = ['omni', 'sidebar', 'hostI18n', 'swarmI18n', 'thought', 'inlineDiff', 'wallpaper', 'periodicPicker', 'settings', 'mascot', 'suggester'];
+const CHANNEL_CACHE_NAMES = ['omni', 'sidebar', 'hostI18n', 'swarmI18n', 'thought', 'inlineDiff', 'wallpaper', 'periodicPicker', 'settings', 'mascot', 'suggester', 'homeStudio'];
 const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
 const CODE_HASH_RE = /^[0-9a-z]{1,16}$/;
 
@@ -6116,7 +6132,7 @@ const _bundleCacheStats = {
   channelDiskHits: 0,
   channelDiskMisses: 0,
   channelCompileRuns: 0,
-  channelHitsByName: { omni: 0, sidebar: 0, hostI18n: 0, thought: 0, inlineDiff: 0, wallpaper: 0, periodicPicker: 0, settings: 0, mascot: 0, suggester: 0 },
+  channelHitsByName: { omni: 0, sidebar: 0, hostI18n: 0, thought: 0, inlineDiff: 0, wallpaper: 0, periodicPicker: 0, settings: 0, mascot: 0, suggester: 0, homeStudio: 0 },
   lastOutcome: 'none',
   lastCachePath: null,
 };
@@ -7005,6 +7021,15 @@ function getConfigRefreshTemplate() {
           delete globalThis.__agPrismMascotArt;
         } catch {}
       }
+      if (effectiveCfg?.homeLayout && effectiveCfg.homeLayout !== 'studio') {
+        try {
+          (window.__agPrism || window.__agClaudeStyle)?.detachHomeStudio?.();
+          document.getElementById?.('ag-prism-studio-v101-css')?.remove?.();
+          document.querySelectorAll?.('.ag-cs-home-panel-seat,.ag-cs-home-panel')?.forEach?.((n) => n.remove());
+          document.documentElement?.removeAttribute?.('data-ag-prism-scope');
+          for (const k of ['__agPrismHomeStudioPanel', '__agHomeStudioPanel']) { delete window[k]; delete globalThis[k]; }
+        } catch {}
+      }
       if (effectiveCfg?.periodicModelPicker === 'off' || effectiveCfg?.periodicModelPicker === false) {
         try {
           window.__agPrismPeriodicPicker?.destroy?.();
@@ -7717,7 +7742,7 @@ function resetBundleCacheStats() {
   _bundleCacheStats.channelDiskHits = 0;
   _bundleCacheStats.channelDiskMisses = 0;
   _bundleCacheStats.channelCompileRuns = 0;
-  _bundleCacheStats.channelHitsByName = { omni: 0, sidebar: 0, hostI18n: 0, thought: 0, inlineDiff: 0, wallpaper: 0, periodicPicker: 0, settings: 0, mascot: 0, suggester: 0 };
+  _bundleCacheStats.channelHitsByName = { omni: 0, sidebar: 0, hostI18n: 0, thought: 0, inlineDiff: 0, wallpaper: 0, periodicPicker: 0, settings: 0, mascot: 0, suggester: 0, homeStudio: 0 };
   _bundleCacheStats.lastOutcome = 'none';
   _bundleCacheStats.lastCachePath = null;
   try { _omniClientCache.cachedPaths?.clear?.(); } catch {}
@@ -7728,7 +7753,10 @@ function resetBundleCacheStats() {
   try { _inlineDiffClientCache.cachedPaths?.clear?.(); } catch {}
   try { _wallpaperAssetsCache.cachedPaths?.clear?.(); } catch {}
   try { _periodicPickerCache.cachedPaths?.clear?.(); } catch {}
+  try { _settingsChannelCache.cachedPaths?.clear?.(); } catch {}
+  try { _mascotChannelCache.cachedPaths?.clear?.(); } catch {}
   try { _suggesterAssetsCache.cachedPaths?.clear?.(); } catch {}
+  try { _homeStudioChannelCache.cachedPaths?.clear?.(); } catch {}
   invalidateBundleCacheRootCache();
 }
 
@@ -7798,7 +7826,7 @@ function isValidChannelCacheEntry(channelName, entry) {
     if (computeHash(`${entry.minClient}\n${entry.minSettingsUi}`) !== entry.codeHash) return false;
     return sha256Text(`${entry.codeHash}\0${entry.minClient}\0${entry.minSettingsUi}`) === entry.payloadSha256;
   }
-  if (channelName === 'periodicPicker' || channelName === 'settings' || channelName === 'mascot') {
+  if (channelName === 'periodicPicker' || channelName === 'settings' || channelName === 'mascot' || channelName === 'homeStudio') {
     if (!hasOwn('minRuntime') || typeof entry.minRuntime !== 'string' || entry.minRuntime.length === 0) return false;
     if (Buffer.byteLength(entry.minRuntime, 'utf8') > CHANNEL_CACHE_MAX_PAYLOAD_BYTES) return false;
     if (computeHash(entry.minRuntime) !== entry.codeHash) return false;
@@ -8101,7 +8129,10 @@ function markChannelCachedOnPath(cachePath, chMap) {
     inlineDiff: _inlineDiffClientCache,
     wallpaper: _wallpaperAssetsCache,
     periodicPicker: _periodicPickerCache,
+    settings: _settingsChannelCache,
+    mascot: _mascotChannelCache,
     suggester: _suggesterAssetsCache,
+    homeStudio: _homeStudioChannelCache,
   };
   for (const name of CHANNEL_CACHE_NAMES) {
     const rec = chMap[name];
@@ -10772,6 +10803,145 @@ function buildSuggesterExpression(config = null, opts = null) {
   })()`;
 }
 
+// ── 第十二通道：Studio 首页仪表盘（home-studio-panel.js）独立延迟注入（剥离 Channel 1 体积） ──
+let _homeStudioChannelCache = { sig: '', sourceHash: '', minRuntime: '', codeHash: '', cachedPaths: new Set() };
+
+function shouldEnableHomeStudio(config = null) {
+  const cfg = config && typeof config === 'object' ? reconcileConfigAliases(config) : readConfig();
+  return (cfg.homeLayout || cfg.homeMode || 'studio') === 'studio';
+}
+
+function readCompiledHomeStudioAssets(opts = null) {
+  const studioPath = path.join(__dirname, 'home-studio-panel.js');
+  if (!fs.existsSync(studioPath)) {
+    return { sig: '', minRuntime: '', codeHash: '' };
+  }
+  const sig = getFileSig(studioPath);
+  const cachePath = resolveBundleCachePathOption(opts);
+  if (!cachePath && _homeStudioChannelCache.sig === sig && _homeStudioChannelCache.codeHash) {
+    return _homeStudioChannelCache;
+  }
+  const buf = fs.readFileSync(studioPath);
+  return resolveChannelAssetsWithDiskCache({
+    channelName: 'homeStudio',
+    memCache: _homeStudioChannelCache,
+    setMemCache: (v) => { _homeStudioChannelCache = v; },
+    sig,
+    fileEntries: [{ rel: 'home-studio-panel.js', content: buf }],
+    opts,
+    compileFn: () => {
+      const minRuntime = minifySingleSource(minifyEmbeddedCssTemplate(buf.toString('utf8')));
+      const codeHash = computeHash(minRuntime);
+      return { minRuntime, codeHash };
+    },
+    toCacheEntry: (assets, sourceHash) => ({
+      sourceHash,
+      codeHash: assets.codeHash,
+      minRuntime: assets.minRuntime,
+      payloadSha256: sha256Text(`${assets.codeHash}\0${assets.minRuntime}`),
+      updatedAt: Date.now(),
+    }),
+    fromCacheEntry: (entry) => ({
+      minRuntime: entry.minRuntime,
+      codeHash: entry.codeHash,
+    }),
+  });
+}
+
+const HOME_STUDIO_REMOVE_EXPRESSION = `(() => {
+  try { (window.__agPrism || window.__agClaudeStyle)?.detachHomeStudio?.(); } catch {}
+  try { document.getElementById?.('ag-prism-studio-v101-css')?.remove?.(); } catch {}
+  try { document.querySelectorAll?.('.ag-cs-home-panel-seat, .ag-cs-home-panel')?.forEach?.((n) => n.remove()); } catch {}
+  try { document.documentElement?.removeAttribute?.('data-ag-prism-scope'); } catch {}
+  try { delete window.__agPrismHomeStudioPanel; } catch {}
+  try { delete globalThis.__agPrismHomeStudioPanel; } catch {}
+  try { delete window.__agHomeStudioPanel; } catch {}
+  try { delete globalThis.__agHomeStudioPanel; } catch {}
+  return { ok: true, status: 'off' };
+})()`;
+
+// 第十二通道独立注入（Studio 首页用量仪表盘与缓存控制器）：完全独立于 Channel 1，接入磁盘缓存，支持幂等复用、热替换旧实例与零泄漏卸载
+function buildHomeStudioChannelExpression(config = null, opts = null) {
+  let resolvedCfg = config;
+  let resolvedOpts = opts;
+  if (
+    !resolvedOpts &&
+    config &&
+    typeof config === 'object' &&
+    ('cachePath' in config || 'noDiskCache' in config || 'deferCacheWrite' in config) &&
+    !('homeLayout' in config) &&
+    !('homeMode' in config)
+  ) {
+    resolvedOpts = config;
+    resolvedCfg = null;
+  }
+  const cfg = resolvedCfg && typeof resolvedCfg === 'object' ? reconcileConfigAliases(resolvedCfg) : readConfig();
+  if (!shouldEnableHomeStudio(cfg)) {
+    return '';
+  }
+  const { minRuntime, codeHash } = readCompiledHomeStudioAssets(resolvedOpts);
+  if (!minRuntime || !codeHash) {
+    return '';
+  }
+  const hashJson = serializeJsonForEval(codeHash);
+  return `(() => {
+    try {
+      if (window.self !== window.top) return { ok: false, status: 'skipped-subframe' };
+    } catch {
+      return { ok: false, status: 'skipped-subframe' };
+    }
+    try {
+      const loc = typeof window !== 'undefined' && window.location;
+      const href = loc && typeof loc.href === 'string' ? loc.href : '';
+      if (href) {
+        const low = href.toLowerCase();
+        if (low.startsWith('devtools://') || low.startsWith('data:') || low.startsWith('chrome:') || low.startsWith('chrome-extension:') || low.startsWith('edge:') || low.startsWith('blob:') || low.startsWith('plugin:')) {
+          return { ok: false, status: 'skipped-non-host' };
+        }
+      }
+    } catch {}
+    try {
+      const liveCfg = (window.__agPrism || window.__agClaudeStyle)?.getState?.()?.cfg;
+      if (liveCfg && typeof liveCfg === 'object' && (liveCfg.homeLayout || liveCfg.homeMode || 'studio') !== 'studio') {
+        try { (window.__agPrism || window.__agClaudeStyle)?.detachHomeStudio?.(); } catch {}
+        try { document.getElementById?.('ag-prism-studio-v101-css')?.remove?.(); } catch {}
+        try { document.querySelectorAll?.('.ag-cs-home-panel-seat, .ag-cs-home-panel')?.forEach?.((n) => n.remove()); } catch {}
+        try { document.documentElement?.removeAttribute?.('data-ag-prism-scope'); } catch {}
+        try { delete window.__agPrismHomeStudioPanel; delete globalThis.__agPrismHomeStudioPanel; delete window.__agHomeStudioPanel; delete globalThis.__agHomeStudioPanel; } catch {}
+        return { ok: true, status: 'off', skippedByLiveCfg: true };
+      }
+    } catch {}
+    const targetHash = ${hashJson};
+    const existing = globalThis.__agPrismHomeStudioPanel || window.__agPrismHomeStudioPanel || globalThis.__agHomeStudioPanel || window.__agHomeStudioPanel;
+    if (existing && existing.__prismCodeHash === targetHash) {
+      try {
+        const api = window.__agPrism || window.__agClaudeStyle;
+        if (typeof api?.syncHomeStudio === 'function') api.syncHomeStudio();
+        else api?.sync?.();
+      } catch {}
+      return { ok: true, reused: true, codeHash: targetHash };
+    }
+    try { (window.__agPrism || window.__agClaudeStyle)?.detachHomeStudio?.(); } catch {}
+    ${minRuntime};
+    try {
+      const mod = globalThis.__agPrismHomeStudioPanel || window.__agPrismHomeStudioPanel || globalThis.__agHomeStudioPanel || window.__agHomeStudioPanel;
+      if (mod && typeof mod === 'object') {
+        mod.__prismCodeHash = targetHash;
+        window.__agPrismHomeStudioPanel = mod;
+        globalThis.__agPrismHomeStudioPanel = mod;
+        window.__agHomeStudioPanel = mod;
+        globalThis.__agHomeStudioPanel = mod;
+      }
+    } catch {}
+    try {
+      const api = window.__agPrism || window.__agClaudeStyle;
+      if (typeof api?.syncHomeStudio === 'function') api.syncHomeStudio();
+      else api?.sync?.();
+    } catch {}
+    return { ok: true, status: 'mounted', codeHash: targetHash };
+  })()`;
+}
+
 const REMOVE_EXPRESSION = `(() => {
   try {
     document.querySelectorAll?.('#ag-prism-wallpaper-root video')?.forEach?.((v) => {
@@ -10967,7 +11137,10 @@ const REMOVE_EXPRESSION = `(() => {
   delete globalThis.__agPrismSidebar;
   delete globalThis.__agPrismThoughtSettingsUi;
   delete globalThis.__agPrismSettingsPanel;
+  try { delete window.__agPrismHomeStudioPanel; } catch {}
+  try { delete window.__agHomeStudioPanel; } catch {}
   delete globalThis.__agPrismHomeStudioPanel;
+  delete globalThis.__agHomeStudioPanel;
   delete globalThis.__agPrismHomeRippleHost;
   delete globalThis.__agPrismModelGlyphCrystal;
   delete globalThis.__agPrismStreamChoreography;
@@ -11363,5 +11536,8 @@ module.exports = {
   MASCOT_REMOVE_EXPRESSION,
   buildSuggesterExpression,
   SUGGESTER_REMOVE_EXPRESSION,
+  shouldEnableHomeStudio,
+  buildHomeStudioChannelExpression,
+  HOME_STUDIO_REMOVE_EXPRESSION,
   isSafeV2SidebarClientSource,
 };

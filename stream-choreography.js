@@ -104,7 +104,8 @@
     const seenOverlays = new WeakSet();
 
     let streamObs = null;
-    let streamRoot = null;
+    const streamRoots = new Set();
+    const paneRunState = new WeakMap();
     let streamMutating = false;
     let lastCodeAt = -1000;
     let scannedNodes = new WeakSet();
@@ -447,51 +448,72 @@
       return STREAM_THOUGHT_RE.test(String(trig.textContent || '').trim());
     };
 
-    const syncThinkingSparks = (primaryModelInfo) => {
+    const resolveScopeBrand = (scope, primaryModelInfo, paneModelMap) => {
+      const mapped = paneModelMap && typeof paneModelMap.get === 'function' ? paneModelMap.get(scope)?.brand : '';
+      if (mapped) return mapped;
+      const paneAttr =
+        (scope && scope !== docOf() && ga(scope, 'data-ag-cs-pane-camp')) ||
+        (scope && typeof scope.closest === 'function' && ga(scope.closest('[data-tiling-pane]'), 'data-ag-cs-pane-camp')) ||
+        '';
+      if (paneAttr) return paneAttr;
+      const glyphBrand =
+        scope && scope !== docOf()
+          ? ga(qs(scope, '[data-testid="model-selector-trigger"] .ag-cs-model-glyph'), 'data-brand')
+          : '';
+      if (glyphBrand) return glyphBrand;
+      return primaryModelInfo?.brand || 'gemini';
+    };
+
+    const syncThinkingSparks = (primaryModelInfo, paneModelMap = null) => {
       const d = docOf();
       if (isDestroyed() || !d) return;
-      const conv = findFormalConvView();
-      const triggers = qsa(conv || d, '[data-testid="thinking-collapsible-trigger"]');
-      const brand = primaryModelInfo?.brand || 'gemini';
+      const views = findFormalConvViews();
+      const scopes = views.length > 0 ? views : [d];
       const mv = ga(d.documentElement, 'data-ag-cs-accent') === 'mono' ? '1' : '0';
-      const cacheSig = `${brand}:${mv}`;
-      const len = triggers.length;
       const pending = [];
-      for (let i = 0; i < len; i++) {
-        const trig = triggers[i];
-        const explicitStreaming = ga(trig, 'data-op-thought-state') === 'streaming';
-        if (!explicitStreaming && i < len - 1 && doneSparkCache.get(trig) === cacheSig) continue;
-        const spark = clHas(trig.firstElementChild, 'ag-cs-thinking-spark') ? trig.firstElementChild : qs(trig, '.ag-cs-thinking-spark');
-        if (
-          !explicitStreaming &&
-          i < len - 1 &&
-          spark &&
-          ga(spark, 'data-state') === 'done' &&
-          ga(spark, 'data-brand') === brand &&
-          ga(spark, 'data-mono') === mv &&
-          !ha(trig, 'data-ag-cs-spark-streaming')
-        ) {
-          doneSparkCache.set(trig, cacheSig);
-          continue;
+      for (let s = 0; s < scopes.length; s++) {
+        const scope = scopes[s];
+        const brand = resolveScopeBrand(scope, primaryModelInfo, paneModelMap);
+        const cacheSig = `${brand}:${mv}`;
+        const triggers = qsa(scope, '[data-testid="thinking-collapsible-trigger"]');
+        const len = triggers.length;
+        for (let i = 0; i < len; i++) {
+          const trig = triggers[i];
+          const isLast = i === len - 1;
+          const explicitStreaming = ga(trig, 'data-op-thought-state') === 'streaming';
+          if (!explicitStreaming && !isLast && doneSparkCache.get(trig) === cacheSig) continue;
+          const spark = clHas(trig.firstElementChild, 'ag-cs-thinking-spark') ? trig.firstElementChild : qs(trig, '.ag-cs-thinking-spark');
+          if (
+            !explicitStreaming &&
+            !isLast &&
+            spark &&
+            ga(spark, 'data-state') === 'done' &&
+            ga(spark, 'data-brand') === brand &&
+            ga(spark, 'data-mono') === mv &&
+            !ha(trig, 'data-ag-cs-spark-streaming')
+          ) {
+            doneSparkCache.set(trig, cacheSig);
+            continue;
+          }
+          const st = explicitStreaming || isStreamingThoughtTrigger(trig, isLast) ? 'streaming' : 'done';
+          if (
+            spark &&
+            ga(spark, 'data-brand') === brand &&
+            ga(spark, 'data-state') === st &&
+            ga(spark, 'data-mono') === mv &&
+            (st === 'streaming') === ha(trig, 'data-ag-cs-spark-streaming')
+          ) {
+            if (st === 'done' && !isLast) doneSparkCache.set(trig, cacheSig);
+            else doneSparkCache.delete(trig);
+            continue;
+          }
+          if (st !== 'done') doneSparkCache.delete(trig);
+          pending.push({ trig, brand, st, isLast, cacheSig });
         }
-        const st = explicitStreaming || isStreamingThoughtTrigger(trig, i === len - 1) ? 'streaming' : 'done';
-        if (
-          spark &&
-          ga(spark, 'data-brand') === brand &&
-          ga(spark, 'data-state') === st &&
-          ga(spark, 'data-mono') === mv &&
-          (st === 'streaming') === ha(trig, 'data-ag-cs-spark-streaming')
-        ) {
-          if (st === 'done' && i < len - 1) doneSparkCache.set(trig, cacheSig);
-          else doneSparkCache.delete(trig);
-          continue;
-        }
-        if (st !== 'done') doneSparkCache.delete(trig);
-        pending.push({ trig, brand, st, idx: i });
       }
       const runApply = (it) => {
         applySingleSpark(it.trig, it.brand, it.st);
-        if (it.st === 'done' && it.idx < len - 1) doneSparkCache.set(it.trig, cacheSig);
+        if (it.st === 'done' && !it.isLast) doneSparkCache.set(it.trig, it.cacheSig);
       };
       if (pending.length <= 16 || typeof requestAnimationFrame !== 'function') {
         for (let i = 0; i < pending.length; i++) runApply(pending[i]);
@@ -635,14 +657,22 @@
       }, 28);
     };
 
-    function findFormalConvView() {
-      const d = docOf();
+    function findFormalConvViews() {
+      const d = docOf(), out = [];
       for (const cv of qsa(d, '[data-testid="conversation-view"]')) {
         if (closestOf(cv, '[data-testid="subagent-tab-conversation"]')) continue;
         if (closestOf(cv, '.agy-home') || qs(cv, '.agy-home')) continue;
-        return cv;
+        if (cv.hidden === true || cv.style?.display === 'none') continue;
+        out.push(cv);
       }
-      return null;
+      return out;
+    }
+
+    function findFormalConvView() {
+      const d = docOf(), views = findFormalConvViews();
+      if (views.length <= 1) return views[0] || null;
+      const actCv = closestOf(d?.activeElement, '[data-testid="conversation-view"]');
+      return actCv && views.includes(actCv) ? actCv : views[0];
     }
 
     const sampleHomeComposerRect = () => {
@@ -979,8 +1009,15 @@
         }
         if (isMotionUltra()) {
           const dir = selIdx < sbIndex ? 'down' : 'up';
+          const vps = [];
           for (const vp of qsa(d, '[data-testid="autoscroll-viewport"]')) {
-            if (closestOf(vp, '[data-testid="subagent-tab-conversation"]')) continue;
+            if (!closestOf(vp, '[data-testid="subagent-tab-conversation"]')) vps.push(vp);
+          }
+          const matchedVp = curCid
+            ? vps.find((vp) => ga(closestOf(vp, '[data-cascade-id]'), 'data-cascade-id') === curCid)
+            : null;
+          const targets = matchedVp ? [matchedVp] : vps;
+          for (const vp of targets) {
             sa(vp, 'data-ag-cs-stage-glide', dir);
             const kids = vp.children ? AF(vp.children) : [];
             const glideKids = kids.slice(Math.max(0, kids.length - 3));
@@ -991,7 +1028,6 @@
                 if (isConn(ch) && ga(ch, 'data-ag-cs-glide-item') === dir) ra(ch, 'data-ag-cs-glide-item');
               }
             }, 220);
-            break;
           }
         }
       }
@@ -1043,6 +1079,34 @@
       }
       if (sawNew) notifyMascot('files-changed');
 
+      const PANE_RUN_SEL = '[data-testid="input-cancel-button"],[data-testid="stop-button"],[data-testid="cancel-button"],[data-testid="agent-loading"],[data-testid="thinking-collapsible-trigger"][data-op-thought-state="streaming"]';
+      const views = findFormalConvViews();
+      let paneCausticHit = false;
+      if (views.length > 1) {
+        for (let i = 0; i < views.length; i++) {
+          const cv = views[i];
+          const runPane = Boolean(qs(cv, PANE_RUN_SEL));
+          const ps = paneRunState.get(cv);
+          if (!ps) {
+            paneRunState.set(cv, { wasRunning: runPane, startAt: runPane ? now : 0 });
+          } else if (runPane && !ps.wasRunning) {
+            ps.wasRunning = true;
+            ps.startAt = now;
+          } else if (!runPane && ps.wasRunning) {
+            ps.wasRunning = false;
+            const dur = ps.startAt > 0 ? now - ps.startAt : 0;
+            ps.startAt = 0;
+            if (dur >= 6000 && isMotionUltra()) {
+              const card = qs(cv, '[data-testid="agent-input-box"] .surface-composer-card');
+              if (card && !closestOf(card, '[data-testid="subagent-tab-conversation"]')) {
+                applyCaustic(card);
+                paneCausticHit = true;
+              }
+            }
+          }
+        }
+      }
+
       const runningNow = isConvRunning();
       if (!runInit) {
         runInit = true;
@@ -1064,12 +1128,9 @@
           convAuraCtl?.triggerErrorHalted?.(now);
           notifyMascot('streamDone', { error: true, durationMs: elapsed });
         } else {
-          if (elapsed >= 6000 && isMotionUltra()) {
+          if (!paneCausticHit && elapsed >= 6000 && isMotionUltra()) {
             for (const c of qsa(d, '[data-testid="agent-input-box"] .surface-composer-card')) {
-              if (!closestOf(c, '[data-testid="subagent-tab-conversation"]')) {
-                applyCaustic(c);
-                break;
-              }
+              if (!closestOf(c, '[data-testid="subagent-tab-conversation"]')) applyCaustic(c);
             }
           }
           if (elapsed >= 15000) {
@@ -1078,7 +1139,7 @@
           } else {
             notifyMascot('complete', { durationMs: elapsed });
           }
-          const warnBar = qs(d, '#ag-prism-pulse-bar[data-pv-warn="1"]');
+          const warnBar = qs(d, '[data-ag-prism-pulse-bar][data-pv-warn="1"], #ag-prism-pulse-bar[data-pv-warn="1"]');
           if (warnBar && now - lastVialHighNotifyAt >= 600000) {
             lastVialHighNotifyAt = now;
             notifyMascot('vial-high', { fraction: 0.8 });
@@ -1157,12 +1218,14 @@
         const sheet = closestOf(qs(d, '.agy-home'), '.agy-sheet');
         if (sheet) setAttrIfChanged(sheet, 'data-ag-cs-home-sheet', '1');
       }
-      if (formalConv) {
-        const seat = peOf(formalConv);
+      const formalViews = !inHome ? findFormalConvViews() : [];
+      for (let i = 0; i < formalViews.length; i++) {
+        const cv = formalViews[i];
+        const seat = peOf(cv);
         if (seat && tagOf(seat) === 'DIV') setAttrIfChanged(seat, 'data-ag-cs-conv-seat', '1');
-        const vp = qs(formalConv, '[data-testid="autoscroll-viewport"]');
+        const vp = qs(cv, '[data-testid="autoscroll-viewport"]');
         const vpP = peOf(vp);
-        if (vpP && vpP !== formalConv) setAttrIfChanged(vpP, 'data-ag-cs-vp-wrap', '1');
+        if (vpP && vpP !== cv) setAttrIfChanged(vpP, 'data-ag-cs-vp-wrap', '1');
       }
       if (inHome && !measured?.homeComposerSampled) sampleHomeComposerRect();
 
@@ -1476,43 +1539,60 @@
 
     const syncDualStreamEngine = () => {
       const active = canStreamMotion() && isConvRunning();
-      const conv = active ? findFormalConvView() : null;
-      if (!active || !conv) {
+      const views = active ? findFormalConvViews() : [];
+      if (!active || views.length === 0) {
         if (streamObs) {
           try {
             streamObs.disconnect();
           } catch {}
-          streamRoot = null;
+          streamRoots.clear();
         }
         flushAllStreamArtifacts(!canStreamMotion());
         return;
       }
 
-      const triggers = qsa(conv, '[data-testid="thinking-collapsible-trigger"]');
-      for (let i = 0; i < triggers.length; i++) {
-        const trig = triggers[i];
-        const bodyDiv = trig.nextElementSibling;
-        if (!bodyDiv || tagOf(bodyDiv) !== 'DIV') continue;
-        const streaming =
-          ga(trig, 'aria-expanded') === 'true' &&
-          isStreamingThoughtTrigger(trig, i === triggers.length - 1);
-        if (streaming) setAttrIfChanged(bodyDiv, 'data-ag-cs-thought-streaming', '1');
-        else if (ha(bodyDiv, 'data-ag-cs-thought-streaming')) ra(bodyDiv, 'data-ag-cs-thought-streaming');
+      const trigByView = [];
+      for (let v = 0; v < views.length; v++) {
+        const conv = views[v];
+        const triggers = qsa(conv, '[data-testid="thinking-collapsible-trigger"]');
+        trigByView.push([conv, triggers]);
+        for (let i = 0; i < triggers.length; i++) {
+          const trig = triggers[i];
+          const bodyDiv = trig.nextElementSibling;
+          if (!bodyDiv || tagOf(bodyDiv) !== 'DIV') continue;
+          const streaming =
+            ga(trig, 'aria-expanded') === 'true' &&
+            isStreamingThoughtTrigger(trig, i === triggers.length - 1);
+          if (streaming) setAttrIfChanged(bodyDiv, 'data-ag-cs-thought-streaming', '1');
+          else if (ha(bodyDiv, 'data-ag-cs-thought-streaming')) ra(bodyDiv, 'data-ag-cs-thought-streaming');
+        }
       }
 
       if (!streamObs && typeof MutationObserver === 'function') streamObs = new MutationObserver(onStreamMutations);
-      if (streamObs && streamRoot !== conv) {
-        try {
-          streamObs.disconnect();
-          const resps = qsa(conv, PROSE_SEL);
-          if (resps.length > 0) snapTextLens(resps[resps.length - 1], 24);
-          if (triggers.length > 0) {
-            const lb = triggers[triggers.length - 1]?.nextElementSibling;
-            if (lb && !isManagedThoughtPanel(lb)) snapTextLens(lb, 16);
+      if (streamObs) {
+        let changed = streamRoots.size !== views.length;
+        if (!changed) {
+          for (let v = 0; v < views.length; v++) {
+            if (!streamRoots.has(views[v])) { changed = true; break; }
           }
-          streamObs.observe(conv, { childList: true, characterData: true, subtree: true });
-          streamRoot = conv;
-        } catch {}
+        }
+        if (changed) {
+          try {
+            streamObs.disconnect();
+            streamRoots.clear();
+            for (let v = 0; v < trigByView.length; v++) {
+              const [conv, triggers] = trigByView[v];
+              const resps = qsa(conv, PROSE_SEL);
+              if (resps.length > 0) snapTextLens(resps[resps.length - 1], 24);
+              if (triggers.length > 0) {
+                const lb = triggers[triggers.length - 1]?.nextElementSibling;
+                if (lb && !isManagedThoughtPanel(lb)) snapTextLens(lb, 16);
+              }
+              streamObs.observe(conv, { childList: true, characterData: true, subtree: true });
+              streamRoots.add(conv);
+            }
+          } catch {}
+        }
       }
     };
 
@@ -1630,7 +1710,7 @@
           streamObs.disconnect();
         } catch {}
         streamObs = null;
-        streamRoot = null;
+        streamRoots.clear();
       }
       flushAllStreamArtifacts(true);
     };
@@ -1646,6 +1726,7 @@
       syncWorkedForAutoUnfold,
       scheduleWorkedForClickSync,
       findFormalConvView,
+      findFormalConvViews,
       sampleHomeComposerRect,
       triggerHomeLiftoffRippleBurst,
       triggerHeroDFiberPulse,
@@ -1674,7 +1755,7 @@
       },
       isEntryMotionSuppressed: () => suppressEntryMotionUntil > nowOf(),
       isStreamMutating: () => streamMutating,
-      hasStreamObserver: () => !!(streamObs && streamRoot),
+      hasStreamObserver: () => !!(streamObs && streamRoots.size > 0),
       stepHighlightFade,
       clearHighlightFade,
       getHighlightFadeState: () => ({

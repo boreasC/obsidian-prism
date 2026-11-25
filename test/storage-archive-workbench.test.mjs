@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 
 import * as arch from '../sidecars/daemon/conversation-archive.mjs';
 import { PrismDaemon, REPO_BINDING } from '../sidecars/daemon/main.mjs';
+import { buildStorageGuardBannerExpression } from '../sidecars/daemon/storage-guard-ui.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -939,4 +940,273 @@ test('settings-panel (Ch9): lazy <details> drawer, 3-way mutually exclusive conf
     if (prevStorage === undefined) delete globalThis.localStorage;
     else globalThis.localStorage = prevStorage;
   }
+});
+
+test('Windows tray graceful quit via loopback CDP Browser.close, Antigravity target verification, timeout fallback, cdpPort sanitization, and dark-mode storage-guard banner contrast', async () => {
+  const antigravityTargets = [
+    {
+      id: 'ag-1',
+      type: 'page',
+      title: 'obsidian-prism - Antigravity',
+      url: 'vscode-file://vscode-app/workbench.html',
+      webSocketDebuggerUrl: 'ws://127.0.0.1:7530/devtools/page/ag-1',
+    },
+  ];
+  const makeCdpFetch = (versionPayload = {}, listPayload = antigravityTargets, listOk = true) => async (url) => {
+    if (url.endsWith('/json/version')) {
+      return {
+        ok: true,
+        json: async () => ({
+          Browser: 'Chrome/132.0.0.0',
+          webSocketDebuggerUrl: 'ws://127.0.0.1:7530/devtools/browser/abc-123',
+          ...versionPayload,
+        }),
+      };
+    }
+    if (url.endsWith('/json/list')) {
+      return { ok: listOk, json: async () => listPayload };
+    }
+    throw new Error(`Unexpected fetch URL: ${url}`);
+  };
+
+  // 1) requestCdpBrowserClose rejects invalid ports & non-loopback / wrong-port / non-browser WS URLs
+  for (const badPort of [0, -1, 65536, 99999, '7530a', NaN, null, undefined]) {
+    let called = false;
+    const ok = await arch.requestCdpBrowserClose(badPort, {
+      fetchImpl: async () => { called = true; return { ok: true, json: async () => ({}) }; },
+    });
+    assert.equal(ok, false);
+    assert.equal(called, false, `Invalid port ${String(badPort)} must not issue fetch`);
+  }
+
+  for (const evilUrl of [
+    'ws://evil.example:7530/devtools/browser/1',
+    'wss://127.0.0.1:7530/devtools/browser/1',
+    'ws://127.0.0.1:9999/devtools/browser/1',
+    'ws://127.0.0.1:7530/devtools/page/1',
+    'http://127.0.0.1:7530/devtools/browser/1',
+  ]) {
+    let wsCreated = false;
+    const ok = await arch.requestCdpBrowserClose(7530, {
+      fetchImpl: makeCdpFetch({ webSocketDebuggerUrl: evilUrl }),
+      WebSocketCtor: class { constructor() { wsCreated = true; } },
+    });
+    assert.equal(ok, false);
+    assert.equal(wsCreated, false, `Untrusted WS URL ${evilUrl} must be rejected before opening socket`);
+  }
+
+  // 2) Non-Antigravity /json/list ports (Chrome, Edge, VS Code, generic Electron, empty/error) & mismatched expectedBrowserWsPath MUST be rejected before opening WebSocket
+  const foreignListScenarios = [
+    {
+      label: 'Chrome browser tabs',
+      targets: [{ id: 'c1', type: 'page', title: 'Google', url: 'https://www.google.com/', webSocketDebuggerUrl: 'ws://127.0.0.1:7530/devtools/page/c1' }],
+    },
+    {
+      label: 'Edge browser UA',
+      version: { Browser: 'Edg/132.0.0.0', 'User-Agent': 'Mozilla/5.0 Edg/132.0.0.0' },
+      targets: [{ id: 'e1', type: 'page', title: 'New tab', url: 'edge://newtab/', webSocketDebuggerUrl: 'ws://127.0.0.1:7530/devtools/page/e1' }],
+    },
+    {
+      label: 'VS Code window (not Antigravity)',
+      targets: [{ id: 'v1', type: 'page', title: 'my-project - Visual Studio Code', url: 'vscode-file://vscode-app/workbench.html', webSocketDebuggerUrl: 'ws://127.0.0.1:7530/devtools/page/v1' }],
+    },
+    {
+      label: 'Generic Electron app',
+      targets: [{ id: 'g1', type: 'page', title: 'Discord', url: 'http://localhost:3000/app', webSocketDebuggerUrl: 'ws://127.0.0.1:7530/devtools/page/g1' }],
+    },
+    {
+      label: 'Empty /json/list',
+      targets: [],
+    },
+    {
+      label: 'Failed /json/list (HTTP 500)',
+      targets: [],
+      listOk: false,
+    },
+  ];
+  for (const sc of foreignListScenarios) {
+    let wsCreated = false;
+    const ok = await arch.requestCdpBrowserClose(7530, {
+      fetchImpl: makeCdpFetch(sc.version || {}, sc.targets, sc.listOk !== false),
+      WebSocketCtor: class { constructor() { wsCreated = true; } },
+    });
+    assert.equal(ok, false, `${sc.label} must be rejected without closing`);
+    assert.equal(wsCreated, false, `${sc.label} must not open browser WebSocket`);
+  }
+
+  {
+    let wsCreated = false;
+    const mismatchOk = await arch.requestCdpBrowserClose(7530, {
+      expectedBrowserWsPath: '/devtools/browser/expected-guid-111',
+      fetchImpl: makeCdpFetch({ webSocketDebuggerUrl: 'ws://127.0.0.1:7530/devtools/browser/other-guid-999' }),
+      WebSocketCtor: class { constructor() { wsCreated = true; } },
+    });
+    assert.equal(mismatchOk, false, 'Mismatched DevToolsActivePort browser GUID must be rejected');
+    assert.equal(wsCreated, false);
+  }
+
+  // 3) Happy path: loopback Browser.close returns true on JSON-RPC ACK or immediate socket close after send (including Swarm OOPIF target match)
+  const sentMessages = [];
+  class MockAckWs {
+    constructor(url) {
+      this.url = url;
+      this._listeners = new Map();
+      queueMicrotask(() => this._emit('open'));
+    }
+    addEventListener(ev, fn) {
+      if (!this._listeners.has(ev)) this._listeners.set(ev, []);
+      this._listeners.get(ev).push(fn);
+    }
+    _emit(ev, arg) {
+      for (const fn of this._listeners.get(ev) || []) fn(arg);
+    }
+    send(payload) {
+      sentMessages.push(JSON.parse(payload));
+      queueMicrotask(() => this._emit('message', { data: JSON.stringify({ id: 1, result: {} }) }));
+    }
+    close() {}
+  }
+  const ackOk = await arch.requestCdpBrowserClose(7530, {
+    expectedBrowserWsPath: '/devtools/browser/abc-123',
+    fetchImpl: makeCdpFetch({ webSocketDebuggerUrl: 'ws://127.0.0.1:7530/devtools/browser/abc-123' }),
+    WebSocketCtor: MockAckWs,
+  });
+  assert.equal(ackOk, true);
+  assert.deepEqual(sentMessages, [{ id: 1, method: 'Browser.close' }]);
+
+  class MockCloseOnQuitWs extends MockAckWs {
+    send(payload) {
+      sentMessages.push(JSON.parse(payload));
+      queueMicrotask(() => this._emit('close'));
+    }
+  }
+  const closeOk = await arch.requestCdpBrowserClose(7530, {
+    fetchImpl: makeCdpFetch(
+      { webSocketDebuggerUrl: 'ws://127.0.0.1:7530/devtools/browser/abc-456' },
+      [{ id: 'sw1', type: 'iframe', title: 'Swarm', url: 'plugin://swarm--swarm_board-1/', webSocketDebuggerUrl: 'ws://127.0.0.1:7530/devtools/page/sw1' }]
+    ),
+    WebSocketCtor: MockCloseOnQuitWs,
+  });
+  assert.equal(closeOk, true, 'Socket closing right after Browser.close send must be treated as accepted quit');
+
+  // 4) Timeout without ACK or close MUST return false (fail-closed) and immediately trigger Win32 CloseMainWindow fallback
+  class MockHangingWs extends MockAckWs {
+    send(payload) {
+      sentMessages.push(JSON.parse(payload));
+      // Intentionally neither emits {id:1} message nor closes socket
+    }
+  }
+  let timeoutFallbackCalls = 0;
+  const quitOnCdpTimeout = await arch.requestGracefulHostQuit(1234, 'C:\\Antigravity\\Antigravity.exe', 'win32', {
+    cdpPort: 7530,
+    timeoutMs: 200,
+    fetchImpl: makeCdpFetch(),
+    WebSocketCtor: MockHangingWs,
+    execFileSyncFn: () => { timeoutFallbackCalls += 1; },
+  });
+  assert.equal(quitOnCdpTimeout, true);
+  assert.equal(timeoutFallbackCalls, 1, 'CDP Browser.close timeout without ACK must return false and immediately fall back to Win32 CloseMainWindow');
+
+  // 5) requestGracefulHostQuit uses CDP Browser.close first (skipping WM_CLOSE when accepted) and falls back to CloseMainWindow on failure
+  let psFallbackCalls = 0;
+  const cdpPortsTried = [];
+  const quitViaCdp = await arch.requestGracefulHostQuit(1234, 'C:\\Antigravity\\Antigravity.exe', 'win32', {
+    cdpPort: 7530,
+    requestCdpClose: async (p) => { cdpPortsTried.push(p); return true; },
+    execFileSyncFn: () => { psFallbackCalls += 1; },
+  });
+  assert.equal(quitViaCdp, true);
+  assert.deepEqual(cdpPortsTried, [7530]);
+  assert.equal(psFallbackCalls, 0, 'When CDP Browser.close succeeds, Win32 WM_CLOSE fallback must not be invoked');
+
+  const quitFallback = await arch.requestGracefulHostQuit(1234, 'C:\\Antigravity\\Antigravity.exe', 'win32', {
+    cdpPort: 7530,
+    requestCdpClose: async (p) => { cdpPortsTried.push(p); return false; },
+    execFileSyncFn: () => { psFallbackCalls += 1; },
+  });
+  assert.equal(quitFallback, true);
+  assert.equal(psFallbackCalls, 1, 'When CDP Browser.close fails, Win32 CloseMainWindow fallback must run');
+
+  // 6) spawnDetachedArchiveTask persists valid cdpPort/cdpBrowserWsPath & sanitizes invalid inputs, executeArchiveTaskSequence clears cdpPort on nudge, and PrismDaemon forwards cdpPort/browserPort
+  const tmpRoot = makeTempDir('ag-prism-win-tray-');
+  try {
+    const convDir = path.join(tmpRoot, 'conversations');
+    const archiveDir = path.join(tmpRoot, 'archive');
+    fs.mkdirSync(convDir, { recursive: true });
+    let capturedValid = null;
+    let capturedInvalid = null;
+    arch.spawnDetachedArchiveTask(
+      { action: 'archive-and-restart', convDir, archiveDir, cdpPort: 7530, cdpBrowserWsPath: '/devtools/browser/ok-guid', gracefulQuit: true, relaunch: true },
+      { spawnHook: (arg) => { capturedValid = arg.payload; return { spawned: true, method: 'mock' }; } }
+    );
+    arch.spawnDetachedArchiveTask(
+      { action: 'archive-and-restart', convDir, archiveDir, cdpPort: 'evil:99999', cdpBrowserWsPath: '/devtools/page/evil\n', gracefulQuit: true, relaunch: true },
+      { spawnHook: (arg) => { capturedInvalid = arg.payload; return { spawned: true, method: 'mock' }; } }
+    );
+    assert.equal(capturedValid.cdpPort, 7530);
+    assert.equal(capturedValid.cdpBrowserWsPath, '/devtools/browser/ok-guid');
+    assert.equal(capturedInvalid.cdpPort, 0);
+    assert.equal(capturedInvalid.cdpBrowserWsPath, '');
+
+    const quitTrace = [];
+    let checks = 0;
+    const seqOut = await arch.executeArchiveTaskSequence(
+      { action: 'archive-and-restart', convDir, archiveDir, hostPid: 555, cdpPort: 7530, cdpBrowserWsPath: '/devtools/browser/ok-guid', gracefulQuit: true, relaunch: false, waitExitTimeoutMs: 600, pollMs: 50, settleMs: 0, recheckGapMs: 0 },
+      {
+        sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+        checkRunning: () => (++checks < 8),
+        requestGracefulQuit: async (pid, _exe, opts) => { quitTrace.push({ pid, cdpPort: opts?.cdpPort, expectedBrowserWsPath: opts?.expectedBrowserWsPath, attempt: opts?.attempt }); return true; },
+        archiveFn: () => ({ ok: true, movedCount: 0, movedMb: 0 }),
+      }
+    );
+    assert.equal(seqOut.ok, true);
+    assert.equal(quitTrace[0].cdpPort, 7530);
+    assert.equal(quitTrace[0].expectedBrowserWsPath, '/devtools/browser/ok-guid');
+    assert.equal(quitTrace[0].attempt, 1);
+    if (quitTrace.length > 1) {
+      assert.equal(quitTrace[1].cdpPort, 0, 'Nudge retry must fall back to OS-level graceful quit');
+      assert.equal(quitTrace[1].attempt, 2);
+    }
+
+    const daemon = new PrismDaemon({
+      rootDir: ROOT,
+      storageGuardStatePath: path.join(tmpRoot, 'guard.json'),
+      enableStorageGuardTimer: false,
+      enableAutoUpdateTimer: false,
+      silent: true,
+    });
+    let daemonPayload = null;
+    const schedRes = await daemon.executeRepoAction({
+      action: 'archive-and-restart',
+      confirm: true,
+      _testOverrides: {
+        convDir,
+        archiveDir,
+        cdpPort: 17530,
+        skipUsageSnapshot: true,
+        checkIdle: async () => ({ idle: true }),
+        detectHost: async () => ({ pid: 8888, exePath: 'C:\\Antigravity\\Antigravity.exe' }),
+        spawnHook: (arg) => { daemonPayload = arg.payload; return { spawned: true, method: 'mock' }; },
+      },
+    });
+    assert.equal(schedRes.ok, true);
+    assert.equal(daemonPayload.cdpPort, 17530);
+
+    // Verify _resolveCdpQuitTarget uses live verified this.browserPort (not undefined this.cdpPort) when running normally
+    daemon.browserPort = 27530;
+    const resolvedTarget = daemon._resolveCdpQuitTarget(null);
+    assert.equal(resolvedTarget.cdpPort, 27530);
+    await daemon.stop(false, { skipAutoArchive: true });
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+
+  // 7) storage-guard-ui.mjs light-theme selectors must NOT use html:not(.dark) (which falsely matches dark Antigravity where .dark is on <body>)
+  const bannerExpr = buildStorageGuardBannerExpression({ copy: {} });
+  assert.equal(bannerExpr.includes('html:not(.dark)'), false, 'storage-guard-ui CSS must never use html:not(.dark)');
+  const bannerSrc = fs.readFileSync(path.join(ROOT, 'sidecars', 'daemon', 'storage-guard-ui.mjs'), 'utf8');
+  assert.equal(bannerSrc.includes('html:not(.dark)'), false, 'storage-guard-ui.mjs must never use html:not(.dark)');
+  assert.ok(bannerSrc.includes('html[data-ag-cs-theme="light"]'), 'light title/button styles must target html[data-ag-cs-theme="light"]');
+  assert.ok(bannerSrc.includes('html>body:is(.theme-light,.light-theme,.light)'), 'light styles must support body light-theme classes');
+  assert.ok(bannerExpr.includes('html\\u003ebody:is(.theme-light,.light-theme,.light)'), 'serialized banner expression must preserve body light-theme selector with XSS-escaped >');
 });

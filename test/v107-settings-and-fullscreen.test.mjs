@@ -700,6 +700,7 @@ test('#6 updateChannel sends { version, channel } immediately without 40ms race 
     targetFps: '180',
     homeLayout: 'studio',
     homeRipple: true,
+    convRipple: 'off',
     logoInk: 'accent',
     language: 'zh-CN',
     hostLocalization: 'auto',
@@ -792,13 +793,44 @@ test('#6 updateChannel sends { version, channel } immediately without 40ms race 
     assert.equal(rowOf('sidebarCompact').style.opacity, '');
     assert.equal(rowOf('sidebarCompact').hasAttribute('data-ag-cs-dimmed'), false);
 
-    // homeLayout=off -> homeRipple dims
+    // homeLayout=off -> homeRipple dims, while convRipple stays active (not dimmed)
     btnOf('homeLayout', 'off').click();
     assert.equal(rowOf('homeRipple').style.opacity, '0.55');
     assert.equal(rowOf('homeRipple').getAttribute('data-ag-cs-dimmed'), '1');
+    assert.equal(rowOf('convRipple').style.opacity, '');
+    assert.equal(rowOf('convRipple').hasAttribute('data-ag-cs-dimmed'), false);
     btnOf('homeLayout', 'studio').click();
     assert.equal(rowOf('homeRipple').style.opacity, '');
     assert.equal(rowOf('homeRipple').hasAttribute('data-ag-cs-dimmed'), false);
+
+    // motionLevel=off -> both homeRipple and convRipple dim together; restoring motionLevel restores both
+    btnOf('motionLevel', 'off').click();
+    assert.equal(rowOf('homeRipple').style.opacity, '0.55');
+    assert.equal(rowOf('homeRipple').getAttribute('data-ag-cs-dimmed'), '1');
+    assert.equal(rowOf('convRipple').style.opacity, '0.55');
+    assert.equal(rowOf('convRipple').getAttribute('data-ag-cs-dimmed'), '1');
+    btnOf('motionLevel', 'ultra').click();
+    assert.equal(rowOf('homeRipple').style.opacity, '');
+    assert.equal(rowOf('homeRipple').hasAttribute('data-ag-cs-dimmed'), false);
+    assert.equal(rowOf('convRipple').style.opacity, '');
+    assert.equal(rowOf('convRipple').hasAttribute('data-ag-cs-dimmed'), false);
+
+    // convRipple 4-tier segmented control sits adjacent right after homeRipple and updates state.convRipple cleanly
+    const hrRow = rowOf('homeRipple');
+    const crRow = rowOf('convRipple');
+    const sibs = hrRow.parentElement.children;
+    assert.equal(sibs.indexOf(crRow), sibs.indexOf(hrRow) + 1);
+    const crBtns = crRow.querySelectorAll('button[data-ag-cs-key="convRipple"]');
+    assert.deepEqual(
+      crBtns.map((b) => b.getAttribute('data-ag-cs-val')),
+      ['"off"', '"subtle"', '"medium"', '"full"']
+    );
+    assert.equal(crBtns[0].parentElement.hasAttribute('data-ui-kind'), false, '4-tier convRipple must render as segmented group, not switch');
+    for (const tier of ['subtle', 'medium', 'full', 'off']) {
+      btnOf('convRipple', tier).click();
+      assert.equal(state.convRipple, tier);
+      assert.equal(btnOf('convRipple', tier).getAttribute('aria-pressed'), 'true');
+    }
 
     // omniModule=off -> linkTarget dims
     btnOf('omniModule', 'off').click();

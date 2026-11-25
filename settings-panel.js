@@ -54,6 +54,7 @@
     targetFps: mkSp(['60', '120', '180', 'native'], '180'),
     homeLayout: mkSp(['studio', 'classic', 'off']),
     homeRipple: S_T,
+    convRipple: mkSp(['off', 'subtle', 'medium', 'full'], 'off', { on: 'medium', true: 'medium', false: 'off' }),
     logoInk: mkSp(['accent', 'foreground']),
     language: mkSp(['zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'es', 'fr', 'de'], 'zh-CN', { yue: 'zh-CN', 'zh-HK': 'zh-TW', 'zh-MO': 'zh-TW' }),
     hostLocalization: S_AUTO,
@@ -85,8 +86,8 @@
 
   const SCENE_PRESETS = O.freeze({
     ultra: O.freeze({ motionLevel: 'ultra', targetFps: '180', homeRipple: true, mascot: 'crab', sidebarCompact: false, smoothCaret: true, ambientIntensity: '100' }),
-    focus: O.freeze({ motionLevel: 'subtle', targetFps: '120', homeRipple: false, mascot: 'off', sidebarCompact: true, smoothCaret: true, ambientIntensity: '35' }),
-    eco: O.freeze({ motionLevel: 'off', targetFps: '60', homeRipple: false, mascot: 'off', sidebarCompact: false, smoothCaret: false, ambientIntensity: '0' }),
+    focus: O.freeze({ motionLevel: 'subtle', targetFps: '120', homeRipple: false, convRipple: 'off', mascot: 'off', sidebarCompact: true, smoothCaret: true, ambientIntensity: '35' }),
+    eco: O.freeze({ motionLevel: 'off', targetFps: '60', homeRipple: false, convRipple: 'off', mascot: 'off', sidebarCompact: false, smoothCaret: false, ambientIntensity: '0' }),
   });
 
   const normThoughtStyle = (s) => (s === 'tech' || s === 'technical' ? 'technical' : s === 'concise' || s === 'custom' ? s : null);
@@ -1467,11 +1468,12 @@
       }
     }
     if ((key === 'periodicModelPicker' || key === 'omniModule' || key === 'sidebarStudio' || key === 'autoUpdate' || key === 'sidebarNavFold') && typeof val === 'boolean') val = val ? 'on' : 'off';
+    if (key === 'convRipple' && typeof val === 'boolean') val = val ? 'medium' : 'off';
     if (typeof spec.default === 'string' && typeof val === 'number' && Number.isFinite(val)) val = String(val);
     return spec.allowed.includes(val) ? { valid: true, value: val } : { valid: false };
   };
 
-  const buildSanitizedConfigExport = (currentSettings = {}, rawThoughtCfg = null, version = '1.0.8-beta.1') => {
+  const buildSanitizedConfigExport = (currentSettings = {}, rawThoughtCfg = null, version = '1.0.8-beta.2') => {
     const settings = {};
     for (const [k, spec] of O.entries(PRISM_SETTINGS_SCHEMA)) {
       if (k === 'language' && String(currentSettings[k] ?? '').trim().toLowerCase() === 'auto') {
@@ -1481,7 +1483,7 @@
       const c = sanitizeKeyVal(k, currentSettings[k]);
       settings[k] = c.valid ? c.value : spec.default;
     }
-    const out = { schema: 'obsidian-prism-config-v1', version: String(version || '1.0.8-beta.1'), exportedAt: new Date().toISOString(), settings };
+    const out = { schema: 'obsidian-prism-config-v1', version: String(version || '1.0.8-beta.2'), exportedAt: new Date().toISOString(), settings };
     const tSrc = isObj(rawThoughtCfg) && isObj(rawThoughtCfg.config) ? rawThoughtCfg.config : rawThoughtCfg;
     if (isObj(tSrc) && !isArr(tSrc) && !isFn(tSrc.then) && tSrc.ok !== false) {
       out.thought = {
@@ -1812,6 +1814,10 @@
         const p = parseMascotSpec(v);
         return p ? encodeMascotSpec(p) : PRISM_SETTINGS_SCHEMA.mascot.default;
       }
+      if (k === 'convRipple') {
+        if (v === true || v === 'true' || v === 'on') return 'medium';
+        if (v === false || v === 'false') return 'off';
+      }
       return v !== undefined && v !== null && v !== '' ? v : PRISM_SETTINGS_SCHEMA[k]?.default;
     };
     const matchBtn = (k, valJson, cur) => {
@@ -1930,13 +1936,15 @@
         const tb = qs(rootEl, '[data-testid="prism-thought-ai-config"]');
         if (tb) tb.hidden = tmMode !== 'ai';
       }
+      const isMotionOff = effVal('motionLevel', l) === 'off';
       for (const [dk, dim] of [
         ['placeholderStyle', effVal('composerRestyle', l) === false],
         ['sidebarCompact', effVal('sidebarRestyle', l) === false],
         ['sidebarNavFold', effVal('sidebarRestyle', l) === false],
         ['thoughtTrigger', tmMode === 'off'],
         ['thoughtView', tmMode === 'off'],
-        ['homeRipple', effVal('homeLayout', l) === 'off'],
+        ['homeRipple', isMotionOff || effVal('homeLayout', l) === 'off'],
+        ['convRipple', isMotionOff],
         ['linkTarget', effVal('omniModule', l) === 'off'],
       ]) {
         const dr = qs(rootEl, `[data-ag-cs-row="${dk}"]`);
@@ -2362,6 +2370,12 @@
             RS('targetFps', [['60', U('optFps60', '60')], ['120', U('optFps120', '120')], ['180', U('optFps180', '180')], ['native', U('optFpsNative')]]),
             RS('homeLayout', [['studio', U('optStudio')], ['classic', U('optClassic')], ['off', U('optNativeOff')]]),
             RS('homeRipple', onOff, 'Ripple'),
+            RS('convRipple', [
+              ['off', U('optConvRippleOff', U('offLabel', 'Off'))],
+              ['subtle', U('optConvRippleSubtle', 'Subtle')],
+              ['medium', U('optConvRippleMedium', 'Medium')],
+              ['full', U('optConvRippleFull', 'Full')],
+            ]),
             RS('logoInk', [['accent', U('optAccent')], ['foreground', U('optForeground')]]),
             RS('language', langOpts),
             RS('hostLocalization', [['auto', U('optHostI18nAuto', 'Auto')], ['on', U('optHostI18nOn', U('onLabel', 'On'))], ['off', U('optHostI18nOff', U('offLabel', 'Off'))]], 'HostI18n'),
@@ -2396,7 +2410,7 @@
           ]) rowDefs[r.key] = r;
 
           const groups = [
-            { id: 'appearance', title: U('grpAppearance'), keys: ['palette', 'lightPreset', 'accentTone', 'cornerStyle', 'ambientIntensity', 'motionLevel', 'targetFps', 'homeLayout', 'homeRipple', 'logoInk', 'language', 'hostLocalization'] },
+            { id: 'appearance', title: U('grpAppearance'), keys: ['palette', 'lightPreset', 'accentTone', 'cornerStyle', 'ambientIntensity', 'motionLevel', 'targetFps', 'homeLayout', 'homeRipple', 'convRipple', 'logoInk', 'language', 'hostLocalization'] },
             { id: 'interaction', title: U('grpInteraction'), keys: ['composerRestyle', 'placeholderStyle', 'smoothCaret', 'scrollBottomMotion', 'contextMenu', 'codeFont', 'codeLigatures', 'mascot', 'sidebarRestyle', 'sidebarCompact', 'sidebarNavFold'] },
             { id: 'thought', title: U('grpThought'), keys: ['thoughtTranslate', 'thoughtTrigger', 'thoughtView'] },
             { id: 'modules', title: U('groupModules'), keys: ['telemetryModule', 'effortSliderModule', 'effortMemory', 'periodicModelPicker', 'omniModule', 'linkTarget'] },

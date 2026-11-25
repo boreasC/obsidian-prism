@@ -245,14 +245,14 @@ function createLightweightDom() {
 test('Obsidian Prism brand compliance, GPL-3.0 LICENSE, NOTICE, CITATION.cff, THIRD_PARTY_NOTICES.md, plugin.json, and sidecar.json contract', () => {
   const pkgJson = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8'));
   assert.equal(pkgJson.name, 'obsidian-prism');
-  assert.equal(pkgJson.version, '1.0.8-beta.1');
+  assert.equal(pkgJson.version, '1.0.8-beta.2');
   assert.equal(pkgJson.license, 'GPL-3.0-only');
 
   const pluginJson = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'plugin.json'), 'utf8'));
   assert.deepEqual(Object.keys(pluginJson).sort(), ['description', 'displayName', 'logo', 'name', 'version']);
   assert.equal(pluginJson.name, 'obsidian-prism');
   assert.equal(pluginJson.displayName, 'Obsidian Prism');
-  assert.equal(pluginJson.version, '1.0.8-beta.1');
+  assert.equal(pluginJson.version, '1.0.8-beta.2');
   assert.equal(pluginJson.logo, 'assets/logo.svg');
   assert.ok(fs.existsSync(path.join(ROOT_DIR, 'assets', 'logo.svg')));
 
@@ -963,9 +963,9 @@ test('PrismDaemon & install-plugin.cjs: obsidian-prism target, legacy antigravit
                       ready: true,
                       hasPrism: true,
                       hasRepoBridge: true,
-                      prismAttr: '1.0.8-beta.1',
+                      prismAttr: '1.0.8-beta.2',
                       hasStyle: true,
-                      version: '1.0.8-beta.1',
+                      version: '1.0.8-beta.2',
                       status: 'ok',
                     },
                   },
@@ -1507,8 +1507,8 @@ test('PrismDaemon HS-1 & SEC-2: 68 rapid-fire setting updates, multi-window cros
     assert.equal(stB.vmWin.__agPrism.getState().cfg.palette, 'warm', 'Window B must receive Window A cross-window sync');
     assert.equal(stB.vmWin.__agPrism.getState().cfg.accentTone, 'cobalt');
     assert.ok(
-      totalAddScriptCalls <= 20,
-      `HS-1: Single-flight coalescing should collapse 68 rapid clicks across 2 windows (got ${totalAddScriptCalls})`
+      totalAddScriptCalls <= 22,
+      `HS-1: Single-flight coalescing should collapse 68 rapid clicks across 2 windows × 9 dynamic channels (got ${totalAddScriptCalls})`
     );
 
     // Phase B (Cross-window epoch isolation): Window B (localWriteEpoch 1..12 << Window A's 68!) rapid-fires 12 updates
@@ -1578,8 +1578,8 @@ test('PrismDaemon HS-1 & SEC-2: 68 rapid-fire setting updates, multi-window cros
     assert.equal(stB.vmWin.__agPrism.getState().cfg.palette, 'obsidian', 'Window B must sync with reloaded Window A');
     assert.equal(stB.vmWin.__agPrism.getState().cfg.accentTone, 'iris');
     assert.ok(
-      activeScripts.size <= 16,
-      `HS-1: Active NewDocument script handles across 2 windows × 8 dynamic channels (main + Omni + Sidebar Studio + Inline Diff + Wallpaper + Periodic Picker + Mascot + Suggester) must never leak (got ${activeScripts.size})`
+      activeScripts.size <= 18,
+      `HS-1: Active NewDocument script handles across 2 windows × 9 dynamic channels (main + Omni + Sidebar Studio + Inline Diff + Wallpaper + Periodic Picker + Mascot + Suggester + Home Studio) must never leak (got ${activeScripts.size})`
     );
 
     await daemon.stop(false);

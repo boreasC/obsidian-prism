@@ -404,7 +404,14 @@
       return svg;
     }
 
-    function checkConvRunning() {
+    function checkConvRunning(scope = null) {
+      if (scope && typeof scope.querySelector === 'function') {
+        const hit = scope.querySelector(
+          '[data-testid="agent-input-box"] [data-testid="input-cancel-button"], [data-testid="agent-input-box"] [data-testid="stop-button"]'
+        );
+        if (hit) return true;
+        if (findAllConvViews().length > 1) return false;
+      }
       if (extIsConvRunning) return Boolean(extIsConvRunning());
       if (!doc || typeof doc.querySelector !== 'function') return false;
       return Boolean(
@@ -414,25 +421,45 @@
       );
     }
 
-    function findPrimaryConvView() {
-      if (
-        cachedConvView &&
-        cachedConvView.isConnected !== false &&
-        !cachedConvView.closest?.('[data-testid="subagent-tab-conversation"]') &&
-        !cachedConvView.closest?.('.agy-home') &&
-        !cachedConvView.querySelector?.('.agy-home')
-      ) {
-        return cachedConvView;
-      }
-      if (!doc || typeof doc.querySelectorAll !== 'function') return null;
-      const views = doc.querySelectorAll('[data-testid="conversation-view"]');
+    function isFormalConv(cv) {
+      return Boolean(
+        cv &&
+          cv.isConnected !== false &&
+          cv.hidden !== true &&
+          cv.style?.display !== 'none' &&
+          !cv.closest?.('[data-testid="subagent-tab-conversation"]') &&
+          !cv.closest?.('.agy-home') &&
+          !cv.querySelector?.('.agy-home')
+      );
+    }
+
+    function findAllConvViews() {
+      if (!doc || typeof doc.querySelectorAll !== 'function') return [];
+      const views = doc.querySelectorAll(S_CV), out = [];
       for (let i = 0; i < views.length; i++) {
-        const cv = views[i];
-        if (cv.closest?.('[data-testid="subagent-tab-conversation"]')) continue;
-        if (cv.closest?.('.agy-home') || cv.querySelector?.('.agy-home')) continue;
-        cachedConvView = cv;
-        return cv;
+        if (isFormalConv(views[i])) out.push(views[i]);
       }
+      return out;
+    }
+
+    function findPrimaryConvView(hintEl = null) {
+      const hCv = hintEl?.matches?.(S_CV) ? hintEl : cl(hintEl, S_CV);
+      if (isFormalConv(hCv)) {
+        cachedConvView = hCv;
+        return hCv;
+      }
+      const actCv = cl(doc?.activeElement, S_CV);
+      if (isFormalConv(actCv)) {
+        cachedConvView = actCv;
+        return actCv;
+      }
+      if (isFormalConv(cachedConvView)) return cachedConvView;
+      const formal = findAllConvViews();
+      if (formal.length > 0) {
+        cachedConvView = formal[0];
+        return formal[0];
+      }
+      const views = qa(doc, S_CV);
       cachedConvView = views.length > 0 ? views[0] : null;
       return cachedConvView;
     }
@@ -441,8 +468,13 @@
       if (startEl?.closest) {
         const vp = startEl.closest(S_VP);
         if (vp) return vp;
+        const ownCv = startEl.closest(S_CV);
+        if (ownCv?.querySelector) {
+          const ownVp = ownCv.querySelector(S_VP);
+          if (ownVp) return ownVp;
+        }
       }
-      const cv = findPrimaryConvView();
+      const cv = findPrimaryConvView(startEl);
       if (cv?.querySelector) {
         const vp = cv.querySelector(S_VP);
         if (vp) return vp;
@@ -790,14 +822,24 @@
 
     function syncCodeBlocks() {
       if (isDead() || !doc?.querySelectorAll) return;
-      const conv = findPrimaryConvView();
-      const responses = qa(conv, '[data-testid="planner-response-text"], [data-testid="agent-response"]');
-      const lastResp = responses.length > 0 ? responses[responses.length - 1] : null;
-      let streamingPre = null;
-      if (checkConvRunning() && lastResp) {
-        const rPres = qa(lastResp, 'pre');
-        const tailPre = rPres.length > 0 ? rPres[rPres.length - 1] : null;
-        if (tailPre && !hasFollowingSiblingInResp(tailPre, lastResp)) streamingPre = tailPre;
+      const views = findAllConvViews();
+      const convScopes = views.length > 0 ? views : [findPrimaryConvView()].filter(Boolean);
+      const streamingPres = new Set();
+      const lastRespByConv = new Map();
+      let defaultLastResp = null;
+      for (let v = 0; v < convScopes.length; v++) {
+        const cv = convScopes[v];
+        const responses = qa(cv, '[data-testid="planner-response-text"], [data-testid="agent-response"]');
+        const lr = responses.length > 0 ? responses[responses.length - 1] : null;
+        if (lr) {
+          lastRespByConv.set(cv, lr);
+          if (!defaultLastResp) defaultLastResp = lr;
+          if (checkConvRunning(cv)) {
+            const rPres = qa(lr, 'pre');
+            const tailPre = rPres.length > 0 ? rPres[rPres.length - 1] : null;
+            if (tailPre && !hasFollowingSiblingInResp(tailPre, lr)) streamingPres.add(tailPre);
+          }
+        }
       }
 
       const pres = qa(doc, '[data-testid="planner-response-text"] pre, [data-testid="agent-response"] pre, [data-testid="artifact-view"] pre');
@@ -810,7 +852,7 @@
       mut(() => {
         for (let i = 0; i < pres.length; i++) {
           const pre = pres[i];
-          if (pre === streamingPre) {
+          if (streamingPres.has(pre)) {
             if (ga(pre, AR) !== '1' && tagU(pre.firstElementChild) === 'DIV') {
               setA(pre, AR, '1');
             }
@@ -834,6 +876,8 @@
           if (hasDirectDiv) setA(pre, AR, '1');
           else if (ha(pre, AR)) ra(pre, AR);
 
+          const ownCv = cl(pre, S_CV);
+          const lastResp = (ownCv && lastRespByConv.get(ownCv)) || defaultLastResp;
           const canSeal = Boolean(
             lastResp &&
               !cl(pre, '[data-testid="artifact-view"]') &&
@@ -945,9 +989,9 @@
       return steps.length ? steps : Array.from(qa(root, '[data-testid="user-message-bubble"]'));
     }
 
-    function jumpUserTurn(delta) {
+    function jumpUserTurn(delta, targetEl = null) {
       if (isDead() || !delta) return false;
-      const conv = findPrimaryConvView(),
+      const conv = findPrimaryConvView(targetEl),
         turns = getMountedUserTurns(conv);
       if (!turns.length) return false;
       const vr = findScrollViewport(conv)?.getBoundingClientRect?.(),
@@ -986,10 +1030,10 @@
       foldRafId = 0;
     }
 
-    function foldHistoricalSteps() {
+    function foldHistoricalSteps(convOverride = null) {
       if (isDead() || !doc) return 0;
       cancelFoldRaf();
-      const conv = findPrimaryConvView();
+      const conv = convOverride || cl(activeNavRail, S_CV) || findPrimaryConvView();
       if (!conv?.querySelectorAll) return 0;
       const uSteps = getMountedUserTurns(conv),
         lastU = uSteps[uSteps.length - 1] || null;
@@ -1198,8 +1242,8 @@
       return pop;
     }
 
-    function readCurrentCascadeId() {
-      const cv = findPrimaryConvView();
+    function readCurrentCascadeId(convOverride = null) {
+      const cv = convOverride || cl(activeNavRail, S_CV) || findPrimaryConvView();
       const id =
         ga(cv, 'data-cascade-id') ||
         ga(cl(cv, '[data-cascade-id]'), 'data-cascade-id') ||
@@ -1467,18 +1511,20 @@
     }
 
     function syncPermissionsMenuState() {
-      if (isDead() || !doc?.querySelector) return;
-      const menu = qs(doc, '[data-testid="permissions-menu"]');
-      if (!menu) return;
-      const opts = qa(menu, '[data-testid^="permissions-preset-option-"]'),
-        hint = qs(menu, '[data-testid="permissions-sandbox-hint"]');
+      if (isDead() || !doc?.querySelectorAll) return;
+      const menus = qa(doc, '[data-testid="permissions-menu"]');
+      if (!menus.length) return;
       mut(() => {
-        for (const o of opts) {
-          if (isPermOptionSelected(o)) setA(o, 'data-ag-perm-selected', '1');
-          else if (ha(o, 'data-ag-perm-selected')) ra(o, 'data-ag-perm-selected');
+        for (const menu of menus) {
+          const opts = qa(menu, '[data-testid^="permissions-preset-option-"]'),
+            hint = qs(menu, '[data-testid="permissions-sandbox-hint"]');
+          for (const o of opts) {
+            if (isPermOptionSelected(o)) setA(o, 'data-ag-perm-selected', '1');
+            else if (ha(o, 'data-ag-perm-selected')) ra(o, 'data-ag-perm-selected');
+          }
+          const prev = hint?.previousElementSibling;
+          if (prev && (ga(prev, 'role') === 'separator' || !ha(prev, 'data-testid'))) setA(prev, 'data-ag-perm-sandbox-sep', '1');
         }
-        const prev = hint?.previousElementSibling;
-        if (prev && (ga(prev, 'role') === 'separator' || !ha(prev, 'data-testid'))) setA(prev, 'data-ag-perm-sandbox-sep', '1');
       });
     }
 
@@ -1502,9 +1548,13 @@
       const SP = '[data-testid="status-loading-spinner"], [data-testid="status-task-running"]';
       const rows = qa(doc, '[data-testid="subagent-node"], [data-testid="running-row"], [data-testid="background-task-row"]');
       const sps = qa(doc, '[data-testid="step-plan"]');
-      const ovPanel = qs(doc, '[data-testid="overview-panel"]');
-      const ovShell = qs(doc, '[data-ag-cs-overview-shell="1"]') || ovPanel?.parentElement || null;
-      const inRun = Boolean(qs(qs(doc, '[data-testid="running-items-panel"].grid-rows-\\[1fr\\]'), SP));
+      const ovPanels = qa(doc, '[data-testid="overview-panel"]');
+      const ovShells = qa(doc, '[data-ag-cs-overview-shell="1"]');
+      const runPanels = qa(doc, '[data-testid="running-items-panel"].grid-rows-\\[1fr\\]');
+      let anyInRun = false;
+      for (const rp of runPanels) {
+        if (qs(rp, SP)) { anyInRun = true; break; }
+      }
       mut(() => {
         for (const r of rows) {
           if (qs(r, SP)) setA(r, 'data-ag-sub-running', '1');
@@ -1514,25 +1564,32 @@
           if (qs(sp, '[data-testid="step-plan-item"][data-status="in_progress"] [data-testid="status-loading-spinner"]')) setA(sp, 'data-ag-sp-running', '1');
           else if (ha(sp, 'data-ag-sp-running')) ra(sp, 'data-ag-sp-running');
         }
-        if (!ovPanel) {
-          if (ha(ovShell, 'data-ag-overview-running')) ra(ovShell, 'data-ag-overview-running');
+        if (!ovPanels.length) {
+          for (const sh of ovShells) if (ha(sh, 'data-ag-overview-running')) ra(sh, 'data-ag-overview-running');
           return;
         }
-        let ovRun = inRun || Boolean(qs(ovPanel, SP));
-        for (const sec of qa(ovPanel, '.p-1')) {
-          const hb = qs(sec, 'button');
-          if (!hb) continue;
-          const sp = Boolean(qs(sec, SP));
-          if (sp || hasActiveFiberSubagents(sec)) {
-            setA(hb, 'data-ag-sub-sec-running', '1');
-            ovRun = true;
-          } else if (ha(hb, 'data-ag-sub-sec-running')) {
-            ra(hb, 'data-ag-sub-sec-running');
+        for (const ovPanel of ovPanels) {
+          const ovCv = cl(ovPanel, S_CV);
+          const localRun = ovCv
+            ? Boolean(qs(qs(ovCv, '[data-testid="running-items-panel"].grid-rows-\\[1fr\\]'), SP))
+            : anyInRun;
+          let ovRun = localRun || Boolean(qs(ovPanel, SP));
+          for (const sec of qa(ovPanel, '.p-1')) {
+            const hb = qs(sec, 'button');
+            if (!hb) continue;
+            const sp = Boolean(qs(sec, SP));
+            if (sp || hasActiveFiberSubagents(sec)) {
+              setA(hb, 'data-ag-sub-sec-running', '1');
+              ovRun = true;
+            } else if (ha(hb, 'data-ag-sub-sec-running')) {
+              ra(hb, 'data-ag-sub-sec-running');
+            }
           }
-        }
-        if (ovShell) {
-          if (ovRun) setA(ovShell, 'data-ag-overview-running', '1');
-          else if (ha(ovShell, 'data-ag-overview-running')) ra(ovShell, 'data-ag-overview-running');
+          const ovShell = cl(ovPanel, '[data-ag-cs-overview-shell="1"]') || ovPanel.parentElement || null;
+          if (ovShell) {
+            if (ovRun) setA(ovShell, 'data-ag-overview-running', '1');
+            else if (ha(ovShell, 'data-ag-overview-running')) ra(ovShell, 'data-ag-overview-running');
+          }
         }
       });
     }
@@ -1856,6 +1913,8 @@
       try {
         const t = ev?.target;
         if (isDead() || !t?.closest) return;
+        const clickedCv = cl(t, S_CV);
+        if (isFormalConv(clickedCv)) cachedConvView = clickedCv;
         const pt = cl(t, '[data-testid="permissions-selector-trigger"]');
         if (pt) {
           const dd = ga(pt, 'data-disabled');
@@ -1904,7 +1963,7 @@
           (ev.key === 'ArrowUp' || ev.key === 'ArrowDown') &&
           !isEditableElement(ev.target)
         ) {
-          if (jumpUserTurn(ev.key === 'ArrowUp' ? -1 : 1)) ev.preventDefault?.();
+          if (jumpUserTurn(ev.key === 'ArrowUp' ? -1 : 1, ev.target)) ev.preventDefault?.();
         }
       } catch {}
     }

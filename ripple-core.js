@@ -232,7 +232,10 @@
     }
     return out;
   }
+  function clampDim(n) { return n > 0 && Number.isFinite(n) ? Math.floor(n) : 0; }
   function createWaveField(columns, rows, random = Math.random) {
+    columns = clampDim(columns);
+    rows = clampDim(rows);
     const cells = columns * rows;
     const height = new Float32Array(cells);
     const velocity = new Float32Array(cells);
@@ -759,7 +762,7 @@ color = vec4(rgb * a, a);
   }
   function createWebGL2Renderer(canvas, columns, rows) {
     const gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, preserveDrawingBuffer: false });
-    if (!gl) return null;
+    if (!gl || gl.isContextLost?.()) return null;
     const atlasCanvas = canvas.ownerDocument.createElement('canvas');
     const atlasContext = atlasCanvas.getContext('2d');
     if (!atlasContext) return null;
@@ -782,7 +785,14 @@ color = vec4(rgb * a, a);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       return tex;
     }
+    function free() {
+      if (program) gl.deleteProgram(program);
+      if (cellTexture) gl.deleteTexture(cellTexture);
+      if (atlasTexture) gl.deleteTexture(atlasTexture);
+      program = cellTexture = atlasTexture = null;
+    }
     function build() {
+      free();
       program = gl.createProgram();
       const vs = compile(gl.VERTEX_SHADER, VERTEX_SHADER);
       const fs = compile(gl.FRAGMENT_SHADER, FRAGMENT_SHADER);
@@ -829,12 +839,19 @@ color = vec4(rgb * a, a);
       gl.uniform1f(uniforms.glyphCount, GLYPHS.length);
       atlasKey = key;
     }
-    build();
+    try {
+      build();
+    } catch {
+      try { free(); } catch {}
+      return null;
+    }
     return {
       mode: 'webgl2',
       data,
       build,
+      isContextLost: () => Boolean(gl.isContextLost?.()),
       draw(palette, dpr, uploadCells = true) {
+        if (!program || gl.isContextLost?.()) return;
         buildAtlas(palette.fontFamily, dpr);
         gl.viewport(0, 0, canvas.width, canvas.height);
         gl.uniform2f(uniforms.size, canvas.width, canvas.height);
@@ -847,7 +864,7 @@ color = vec4(rgb * a, a);
         const specCode = Number(palette.spectrumCode ?? 0);
         gl.uniform4f(uniforms.aura, aura.x * dpr, aura.y * dpr, aura.radius * dpr, aura.strength * amb);
         gl.uniform4f(uniforms.optics, RIPPLE.auraTint * (specCode === 5 ? 0.55 : 1), RIPPLE.prismTint * (specCode === 5 ? 0.45 : 1), RIPPLE.prismCap, palette.prismStrength);
-        gl.uniform1f(uniforms.auraLift, RIPPLE.auraLift * amb);
+        gl.uniform1f(uniforms.auraLift, RIPPLE.auraLift * amb * (palette.auraLiftScale ?? 1));
         gl.uniform1f(uniforms.auraPhase, palette.auraPhase || 0);
         gl.uniform1f(uniforms.lightMode, palette.dark === false ? 1 : 0);
         gl.uniform1f(uniforms.spectrumMode, specCode);
@@ -858,8 +875,9 @@ color = vec4(rgb * a, a);
         gl.uniform4f(uniforms.neb0, n0 ? n0.x * dpr : 0, n0 ? n0.y * dpr : 0, n0 ? n0.radius * dpr : 1, n0 ? n0.strength * amb : 0);
         gl.uniform4f(uniforms.neb1, n1 ? n1.x * dpr : 0, n1 ? n1.y * dpr : 0, n1 ? n1.radius * dpr : 1, n1 ? n1.strength * amb : 0);
         gl.uniform4f(uniforms.neb2, n2 ? n2.x * dpr : 0, n2 ? n2.y * dpr : 0, n2 ? n2.radius * dpr : 1, n2 ? n2.strength * amb : 0);
-        gl.uniform4f(uniforms.nebOpt, n0 ? n0.hue : 0, n1 ? n1.hue : 0, n2 ? n2.hue : 0, RIPPLE.nebulaTint * amb * (specCode === 5 ? 0.45 : 1));
-        gl.uniform1f(uniforms.nebulaLift, RIPPLE.nebulaLift * amb);
+        const nebL = palette.nebulaLiftScale ?? 1;
+        gl.uniform4f(uniforms.nebOpt, n0 ? n0.hue : 0, n1 ? n1.hue : 0, n2 ? n2.hue : 0, RIPPLE.nebulaTint * amb * (specCode === 5 ? 0.45 : 1) * (0.35 + 0.65 * nebL));
+        gl.uniform1f(uniforms.nebulaLift, RIPPLE.nebulaLift * amb * nebL);
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, cellTexture);
         if (uploadCells !== false) {
@@ -869,11 +887,9 @@ color = vec4(rgb * a, a);
         gl.clear(gl.COLOR_BUFFER_BIT);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
       },
-      dispose() {
-        gl.deleteProgram(program);
-        gl.deleteTexture(cellTexture);
-        gl.deleteTexture(atlasTexture);
-        try { gl.getExtension?.('WEBGL_lose_context')?.loseContext?.(); } catch {}
+      dispose(keep) {
+        free();
+        if (!keep) try { gl.getExtension?.('WEBGL_lose_context')?.loseContext?.(); } catch {}
       },
     };
   }
@@ -976,8 +992,10 @@ color = vec4(rgb * a, a);
           }
         }
         const auraTintScale = RIPPLE.auraTint * (specCode === 5 ? 0.55 : 1);
-        const nebTintScale = RIPPLE.nebulaTint * amb * (specCode === 5 ? 0.45 : 1);
-        const nebLiftScale = RIPPLE.nebulaLift * amb;
+        const auraLiftScale = RIPPLE.auraLift * (palette.auraLiftScale ?? 1);
+        const nebL = palette.nebulaLiftScale ?? 1;
+        const nebTintScale = RIPPLE.nebulaTint * amb * (specCode === 5 ? 0.45 : 1) * (0.35 + 0.65 * nebL);
+        const nebLiftScale = RIPPLE.nebulaLift * amb * nebL;
         const prismGain = RIPPLE.prismTint * palette.prismStrength * (specCode === 5 ? 0.45 : 1);
         const stepX = RIPPLE.cellWidth * dpr;
         const stepY = RIPPLE.cellHeight * dpr;
@@ -1050,9 +1068,9 @@ color = vec4(rgb * a, a);
             const nebT = wNebC * nebTintScale;
             const prismT = packed > 31 ? ((packed >> 5) / PRISM_LEVELS) * prismGain * (0.88 + 0.12 * wAura) : 0;
             if (isLight) {
-              alpha = Math.min(0.88, alpha * (1 + (RIPPLE.auraLift + 0.72) * wAura * auraStrength + prismT * 0.62 + nebLiftScale * 0.66 * wNebC));
+              alpha = Math.min(0.88, alpha * (1 + (auraLiftScale + 0.72) * wAura * auraStrength + prismT * 0.62 + nebLiftScale * 0.66 * wNebC));
             } else if (wAura > 0 || wNebC > 0) {
-              alpha = Math.min(1, alpha * (1 + RIPPLE.auraLift * wAura * auraStrength + nebLiftScale * wNebC));
+              alpha = Math.min(1, alpha * (1 + auraLiftScale * wAura * auraStrength + nebLiftScale * wNebC));
             }
             const total = auraT + prismT + nebT;
             if (total > 0.0001) {
@@ -1131,7 +1149,9 @@ color = vec4(rgb * a, a);
     return typeof document !== 'undefined' && Boolean(document && document.hidden === true);
   }
   function createGlyphField(canvas, columns, rows, waves, options) {
-    const force2D = typeof globalThis !== 'undefined' && globalThis.__agRippleForce2D === true;
+    columns = clampDim(columns);
+    rows = clampDim(rows);
+    const force2D = Boolean(options && (options.prefer2D || options.force2D)) || (typeof globalThis !== 'undefined' && globalThis.__agRippleForce2D === true);
     const renderer = (columns > 0 && rows > 0)
       ? ((force2D ? null : createWebGL2Renderer(canvas, columns, rows)) || create2DRenderer(canvas, columns, rows))
       : null;
@@ -1147,13 +1167,14 @@ color = vec4(rgb * a, a);
     const wasLit = new Uint8Array(cells);
     let lastIdleRefreshMs = -Infinity;
     let lastIdleDark = null;
+    let lastIdleAlphaScale = -1;
     const cloudColumns = new Map();
     const nebulaState = [
       { x: 0, y: 0, radius: 1, strength: 0, hue: 0 },
       { x: 0, y: 0, radius: 1, strength: 0, hue: 0 },
       { x: 0, y: 0, radius: 1, strength: 0, hue: 0 },
     ];
-    const effective = { dark: true, ink: [0, 0, 0], wave: [0, 0, 0], fontFamily: 'monospace', aura: null, nebula: nebulaState, prismStrength: 1, auraPhase: 0, ambientIntensity: 1, spectrumCode: 0 };
+    const effective = { dark: true, ink: [0, 0, 0], wave: [0, 0, 0], fontFamily: 'monospace', aura: null, nebula: nebulaState, prismStrength: 1, auraPhase: 0, ambientIntensity: 1, spectrumCode: 0, alphaScale: 1, nebulaLiftScale: 1, auraLiftScale: 1 };
     let lastNebulaEnabled = true;
     let instanceZones = normalizeZones(options && options.calmZones);
     let appliedKey = null;
@@ -1220,11 +1241,8 @@ color = vec4(rgb * a, a);
       }
       return lastZonesNormalized;
     }
-    function onContextLost(e) { e.preventDefault(); }
-    function onContextRestored() {
-      if (renderer) renderer.build();
-      stale = true;
-    }
+    const onContextLost = (e) => { e?.preventDefault?.(); try { options?.onContextLost?.(e); } catch {} };
+    const onContextRestored = () => { try { renderer?.build?.(); } catch {} stale = true; };
     if (canvas && canvas.addEventListener) {
       canvas.addEventListener('webglcontextlost', onContextLost);
       canvas.addEventListener('webglcontextrestored', onContextRestored);
@@ -1262,11 +1280,15 @@ color = vec4(rgb * a, a);
         effective.ink[i] = Math.round(ink[i] + (RIPPLE.lightInkCool[i] - ink[i]) * mix);
         effective.wave[i] = Math.round(wave[i] + (RIPPLE.lightWaveCool[i] - wave[i]) * mix * 0.65);
       }
+      const c = palette.conv === true, cl01 = (v, d) => (v !== undefined ? clampFinite(v, 1, 0, 1) : d);
       effective.dark = dark;
       effective.fontFamily = palette.fontFamily || 'monospace';
       effective.aura = ambient <= 0.001 ? null : (palette.aura || null);
       effective.ambientIntensity = ambient;
       effective.spectrumCode = specCode;
+      effective.alphaScale = cl01(palette.alphaScale, c ? (ambient <= 0.001 ? 0 : 0.85) : 1);
+      effective.nebulaLiftScale = cl01(palette.nebulaLiftScale, c ? 0.75 : 1);
+      effective.auraLiftScale = cl01(palette.auraLiftScale, c ? 0.75 : 1);
       if (palette.nebula === false || ambient <= 0.001) {
         effective.nebula = null;
         lastNebulaEnabled = false;
@@ -1285,6 +1307,7 @@ color = vec4(rgb * a, a);
     }
     return {
       mode: renderer ? renderer.mode : 'none',
+      isContextLost: () => Boolean(renderer && renderer.isContextLost && renderer.isContextLost()),
       invalidate() { stale = true; },
       setCalmZones(zones) {
         instanceZones = normalizeZones(zones);
@@ -1375,6 +1398,7 @@ color = vec4(rgb * a, a);
           stale ||
           tick !== lastTick ||
           eff.dark !== lastIdleDark ||
+          eff.alphaScale !== lastIdleAlphaScale ||
           renderer.mode !== 'webgl2' ||
           Math.abs(now - lastIdleRefreshMs) >= 40;
 
@@ -1396,12 +1420,13 @@ color = vec4(rgb * a, a);
           for (const abs of cloudColumns.keys()) if (abs < drift) cloudColumns.delete(abs);
           lastIdleRefreshMs = now;
           lastIdleDark = eff.dark;
+          lastIdleAlphaScale = eff.alphaScale;
         }
         const decay = still
           ? 0
           : (rawDt > 0 ? Math.exp(-rawDt / RIPPLE.glowDecay) : (waveActive ? 1 : 0.88));
         const idleAlpha = eff.dark ? RIPPLE.idleAlphaDark : RIPPLE.idleAlphaLight;
-        const themeScale = eff.dark ? 1 : RIPPLE.lightAlphaScale;
+        const themeScale = (eff.dark ? 1 : RIPPLE.lightAlphaScale) * eff.alphaScale;
         const omega = (TAU / RIPPLE.breathPeriod) * seconds;
         const bs = Math.sin(omega);
         const bc = Math.cos(omega);
@@ -1501,12 +1526,12 @@ color = vec4(rgb * a, a);
         lastDraw = now;
         stale = false;
       },
-      dispose() {
+      dispose(keep) {
         if (canvas && canvas.removeEventListener) {
           canvas.removeEventListener('webglcontextlost', onContextLost);
           canvas.removeEventListener('webglcontextrestored', onContextRestored);
         }
-        if (renderer) renderer.dispose();
+        if (renderer) renderer.dispose(keep);
       },
     };
   }
@@ -1919,7 +1944,7 @@ outColor = clamp(vec4(premulRgb, outAlpha), 0.0, 1.0);
     const gl = canvas && canvas.getContext
       ? canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, preserveDrawingBuffer: false })
       : null;
-    if (!gl) return null;
+    if (!gl || gl.isContextLost?.()) return null;
     let program = null;
     const u = {};
     function compile(type, source) {
@@ -1933,7 +1958,12 @@ outColor = clamp(vec4(premulRgb, outAlpha), 0.0, 1.0);
       }
       return sh;
     }
+    function free() {
+      if (program) gl.deleteProgram(program);
+      program = null;
+    }
     function build() {
+      free();
       const vs = compile(gl.VERTEX_SHADER, GLOW_VERT_SHADER);
       const fs = compile(gl.FRAGMENT_SHADER, HORIZON_FRAGMENT_SHADER);
       program = gl.createProgram();
@@ -1953,18 +1983,21 @@ outColor = clamp(vec4(premulRgb, outAlpha), 0.0, 1.0);
     try {
       build();
     } catch {
-      if (program) gl.deleteProgram(program);
+      try { free(); } catch {}
       return null;
     }
     return {
       mode: 'webgl2',
       build,
+      isContextLost: () => Boolean(gl.isContextLost?.()),
       clear() {
+        if (!program || gl.isContextLost?.()) return;
         gl.viewport(0, 0, canvas.width, canvas.height);
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
       },
       draw(w, h, dpr, timeSec, dark, intensity, presence, reach = DEFAULT_HORIZON_AURA.reach, prism = 0, surge = 0, speed = 1, spectrumCode = 0, semanticCode = 0) {
+        if (!program || gl.isContextLost?.()) return;
         gl.viewport(0, 0, w, h);
         gl.useProgram(program);
         gl.uniform2f(u.uRes, w, h);
@@ -1984,10 +2017,9 @@ outColor = clamp(vec4(premulRgb, outAlpha), 0.0, 1.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
       },
-      dispose() {
-        if (program) gl.deleteProgram(program);
-        program = null;
-        try { gl.getExtension?.('WEBGL_lose_context')?.loseContext?.(); } catch {}
+      dispose(keep) {
+        free();
+        if (!keep) try { gl.getExtension?.('WEBGL_lose_context')?.loseContext?.(); } catch {}
       },
     };
   }
@@ -2288,10 +2320,11 @@ outColor = clamp(vec4(premulRgb, outAlpha), 0.0, 1.0);
         draw() {},
         drawStaticSnapshot() { return false; },
         isSleeping() { return true; },
+        isContextLost() { return false; },
         dispose() {},
       };
     }
-    const force2D = Boolean(options.force2D) || (typeof globalThis !== 'undefined' && globalThis.__agRippleForce2D === true);
+    const force2D = Boolean(options.prefer2D || options.force2D) || (typeof globalThis !== 'undefined' && globalThis.__agRippleForce2D === true);
     const renderer = (force2D ? null : createBrandHorizonGLRenderer(canvas)) || createBrandHorizon2DRenderer(canvas);
     let cssW = Math.max(0, Number(options.width || canvas.clientWidth || 0));
     let cssH = Math.max(0, Number(options.height || canvas.clientHeight || 0));
@@ -2328,11 +2361,8 @@ outColor = clamp(vec4(premulRgb, outAlpha), 0.0, 1.0);
     let clearedZero = false;
     let stale = true;
     let sleeping = false;
-    function onContextLost(e) { if (e && e.preventDefault) e.preventDefault(); }
-    function onContextRestored() {
-      if (renderer && renderer.build) renderer.build();
-      stale = true;
-    }
+    const onContextLost = (e) => { e?.preventDefault?.(); try { options?.onContextLost?.(e); } catch {} };
+    const onContextRestored = () => { try { renderer?.build?.(); } catch {} stale = true; };
     if (canvas.addEventListener) {
       canvas.addEventListener('webglcontextlost', onContextLost);
       canvas.addEventListener('webglcontextrestored', onContextRestored);
@@ -2547,6 +2577,7 @@ outColor = clamp(vec4(premulRgb, outAlpha), 0.0, 1.0);
     }
     return {
       mode: renderer ? renderer.mode : 'none',
+      isContextLost: () => Boolean(renderer && renderer.isContextLost && renderer.isContextLost()),
       resize(w, h, nextDpr) {
         syncSize(w, h, nextDpr);
       },
@@ -2577,13 +2608,13 @@ outColor = clamp(vec4(premulRgb, outAlpha), 0.0, 1.0);
         stale = true;
         return renderInternal(nowInput, isDarkOrOpts, strengthArg, extraArg, true);
       },
-      dispose() {
+      dispose(keep) {
         sleeping = true;
         if (canvas.removeEventListener) {
           canvas.removeEventListener('webglcontextlost', onContextLost);
           canvas.removeEventListener('webglcontextrestored', onContextRestored);
         }
-        if (renderer) renderer.dispose();
+        if (renderer) renderer.dispose(keep);
       },
     };
   }

@@ -273,9 +273,10 @@ test('Wave3 P1-6b & P2-7a: Channel 2~5 share .bundle-cache.json, detect same-len
     cdpNoCache.buildInlineDiffInjectExpression(cdpNoCache.DEFAULT_CONFIG);
     cdpNoCache.buildSettingsChannelExpression(null);
     cdpNoCache.buildMascotChannelExpression({ ...cdpNoCache.DEFAULT_CONFIG, mascot: 'crab' });
+    cdpNoCache.buildHomeStudioChannelExpression({ ...cdpNoCache.DEFAULT_CONFIG, homeLayout: 'studio' });
     assert.equal(fs.existsSync(path.join(snap.pluginDir, '.bundle-cache.json')), false);
 
-    // 1) Cold compile all channels (incl. Ch8 periodicPicker, Ch9 settings, Ch10 mascot) into the single shared .bundle-cache.json
+    // 1) Cold compile all channels (incl. Ch8 periodicPicker, Ch9 settings, Ch10 mascot, Ch12 homeStudio) into the single shared .bundle-cache.json
     const cdpCold = loadFreshCdp(snap.cdpPath);
     const ch1Cold = cdpCold.buildInjectExpression(cdpCold.DEFAULT_CONFIG, { cachePath, deferCacheWrite: true });
 
@@ -313,23 +314,27 @@ test('Wave3 P1-6b & P2-7a: Channel 2~5 share .bundle-cache.json, detect same-len
       { ...cdpCold.DEFAULT_CONFIG, mascot: 'crab' },
       { cachePath, deferCacheWrite: true }
     );
+    const homeStudioCold = cdpCold.buildHomeStudioChannelExpression(
+      { ...cdpCold.DEFAULT_CONFIG, homeLayout: 'studio' },
+      { cachePath, deferCacheWrite: true }
+    );
     const coldMs = performance.now() - tCold0;
 
     // Deferred writes have not hit disk yet
     assert.equal(fs.existsSync(cachePath), false, 'deferCacheWrite must hold writes until flushPendingBundleCache');
     assert.equal(cdpCold.getBundleCacheStats().deferredExprHashRuns, 0);
 
-    // Single atomic flush writes Channel 1 + Channel 2~6 + Channel 8~10 into ONE .bundle-cache.json
+    // Single atomic flush writes Channel 1 + Channel 2~6 + Channel 8~10 + Channel 12 into ONE .bundle-cache.json
     assert.equal(cdpCold.flushPendingBundleCache(), true);
     assert.deepEqual(fs.readdirSync(cacheDir), ['.bundle-cache.json'], 'Must reuse ONE .bundle-cache.json with zero extra files');
     assert.equal(cdpCold.getBundleCacheStats().diskWrites, 1);
     assert.equal(cdpCold.getBundleCacheStats().deferredExprHashRuns, 1);
-    assert.equal(cdpCold.getBundleCacheStats().channelCompileRuns, 8);
+    assert.equal(cdpCold.getBundleCacheStats().channelCompileRuns, 9);
 
     const parsed = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
     assert.equal(parsed.schemaVersion, cdpCold.BUNDLE_CACHE_SCHEMA_VERSION);
     assert.ok(parsed.channels && typeof parsed.channels === 'object');
-    for (const ch of ['omni', 'sidebar', 'hostI18n', 'thought', 'inlineDiff', 'periodicPicker', 'settings', 'mascot']) {
+    for (const ch of ['omni', 'sidebar', 'hostI18n', 'thought', 'inlineDiff', 'periodicPicker', 'settings', 'mascot', 'homeStudio']) {
       assert.ok(parsed.channels[ch], `Expected channels.${ch} in .bundle-cache.json`);
       assert.match(parsed.channels[ch].sourceHash, /^[0-9a-f]{64}$/);
       assert.match(parsed.channels[ch].payloadSha256, /^[0-9a-f]{64}$/);
@@ -351,6 +356,7 @@ test('Wave3 P1-6b & P2-7a: Channel 2~5 share .bundle-cache.json, detect same-len
     let periodicPickerHit;
     let settingsHit;
     let mascotHit;
+    let homeStudioHit;
     let hitMs = 0;
     fs.readFileSync = function spyCacheRead(p, ...rest) {
       if (typeof p === 'string' && path.resolve(p) === resolvedCachePath) {
@@ -377,6 +383,7 @@ test('Wave3 P1-6b & P2-7a: Channel 2~5 share .bundle-cache.json, detect same-len
       periodicPickerHit = cdpHit.buildPeriodicPickerExpression({ ...cdpHit.DEFAULT_CONFIG, periodicModelPicker: 'on' }, { cachePath });
       settingsHit = cdpHit.buildSettingsChannelExpression(null, { cachePath });
       mascotHit = cdpHit.buildMascotChannelExpression({ ...cdpHit.DEFAULT_CONFIG, mascot: 'crab' }, { cachePath });
+      homeStudioHit = cdpHit.buildHomeStudioChannelExpression({ ...cdpHit.DEFAULT_CONFIG, homeLayout: 'studio' }, { cachePath });
       hitMs = performance.now() - tHit0;
     } finally {
       fs.readFileSync = origReadFileSync;
@@ -393,14 +400,15 @@ test('Wave3 P1-6b & P2-7a: Channel 2~5 share .bundle-cache.json, detect same-len
     assert.equal(periodicPickerHit, periodicPickerCold);
     assert.equal(settingsHit, settingsCold);
     assert.equal(mascotHit, mascotCold);
+    assert.equal(homeStudioHit, homeStudioCold);
 
     const hitStats = cdpHit.getBundleCacheStats();
     assert.equal(hitStats.diskHits, 1);
     assert.equal(hitStats.compileUnifiedRuns, 0);
-    assert.equal(hitStats.channelDiskHits, 8);
+    assert.equal(hitStats.channelDiskHits, 9);
     assert.equal(hitStats.channelCompileRuns, 0);
-    assert.deepEqual(hitStats.channelHitsByName, { omni: 1, sidebar: 1, hostI18n: 1, thought: 1, inlineDiff: 1, wallpaper: 0, periodicPicker: 1, settings: 1, mascot: 1, suggester: 0 });
-    assert.ok(hitMs < coldMs, `Expected Channel 2~6 + 8~10 cache hit (${hitMs.toFixed(1)}ms) faster than cold compile (${coldMs.toFixed(1)}ms)`);
+    assert.deepEqual(hitStats.channelHitsByName, { omni: 1, sidebar: 1, hostI18n: 1, thought: 1, inlineDiff: 1, wallpaper: 0, periodicPicker: 1, settings: 1, mascot: 1, suggester: 0, homeStudio: 1 });
+    assert.ok(hitMs < coldMs, `Expected Channel 2~6 + 8~10 + 12 cache hit (${hitMs.toFixed(1)}ms) faster than cold compile (${coldMs.toFixed(1)}ms)`);
 
     // 3) P2-7a: Repeated warm-base-hit config updates defer 676KB exprSha256 until actual flush
     cdpHit.resetBundleCacheStats();

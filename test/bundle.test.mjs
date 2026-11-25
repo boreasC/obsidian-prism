@@ -353,8 +353,9 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
   try {
     const res = vm.runInNewContext(cdp.buildInjectExpression(cdp.DEFAULT_CONFIG), sandbox);
     assert.equal(res.status, 'ok');
-    // Load Channel 10 Mascot (split out of Channel 1) & Channel 9 Settings on demand
+    // Load Channel 10 Mascot, Channel 12 Home Studio (split out of Channel 1) & Channel 9 Settings on demand
     vm.runInNewContext(cdp.buildMascotChannelExpression(cdp.DEFAULT_CONFIG), sandbox);
+    vm.runInNewContext(cdp.buildHomeStudioChannelExpression(cdp.DEFAULT_CONFIG), sandbox);
     vm.runInNewContext(cdp.buildSettingsChannelExpression(), sandbox);
     assert.equal(html.getAttribute('data-ag-cs-style'), '1');
     assert.equal(html.getAttribute('data-ag-cs-palette'), 'obsidian');
@@ -396,8 +397,8 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
     assert.ok(sandbox.window.__agPrism, 'Expected window.__agPrism exposed');
     assert.equal(sandbox.window.__agClaudeStyle, sandbox.window.__agPrism, 'Expected legacy alias pointing to __agPrism');
     const st = sandbox.window.__agPrism.getState();
-    assert.equal(st.version, '1.0.8-beta.1');
-    assert.equal(html.getAttribute('data-ag-prism'), '1.0.8-beta.1');
+    assert.equal(st.version, '1.0.8-beta.2');
+    assert.equal(html.getAttribute('data-ag-prism'), '1.0.8-beta.2');
     assert.equal(html.getAttribute('data-ag-cs-light-preset'), 'crystal');
     assert.equal(html.getAttribute('data-ag-cs-telemetry'), 'auto');
     assert.equal(html.getAttribute('data-ag-cs-effort-slider'), 'auto');
@@ -445,7 +446,7 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
     const settingsSec = appearancePanel.querySelector('#ag-cs-settings-sec');
     assert.ok(settingsSec);
     assert.equal(settingsSec.querySelector('h3')?.textContent, 'Obsidian Prism · 黑曜棱镜');
-    assert.equal(settingsSec.querySelector('.ag-cs-settings-ver')?.textContent, 'v1.0.8-beta.1');
+    assert.equal(settingsSec.querySelector('.ag-cs-settings-ver')?.textContent, 'v1.0.8-beta.2');
     const brandMarkHtml = settingsSec.querySelector('.ag-cs-settings-brand-mark')?.innerHTML || '';
     assert.ok(
       brandMarkHtml.includes('ag-cs-brand-logo-svg') || brandMarkHtml.includes('ag-cs-settings-brand-svg'),
@@ -525,7 +526,7 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
         .map((b) => b.getAttribute('data-ag-cs-key'))
         .filter(Boolean)
     );
-    assert.equal(settingKeys.size, 35);
+    assert.equal(settingKeys.size, 36);
     for (const expectedKey of [
       'palette',
       'lightPreset',
@@ -534,6 +535,7 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
       'targetFps',
       'homeLayout',
       'homeRipple',
+      'convRipple',
       'logoInk',
       'language',
       'hostLocalization',
@@ -1084,8 +1086,9 @@ test('Q&A takeover card, side-question panel, and running tasks clear Clawd masc
   try {
     const res = vm.runInNewContext(cdp.buildInjectExpression(cdp.DEFAULT_CONFIG), sandbox);
     assert.equal(res.status, 'ok');
-    // Load Channel 10 Mascot (split out of Channel 1) & Channel 9 Settings on demand
+    // Load Channel 10 Mascot, Channel 12 Home Studio (split out of Channel 1) & Channel 9 Settings on demand
     vm.runInNewContext(cdp.buildMascotChannelExpression(cdp.DEFAULT_CONFIG), sandbox);
+    vm.runInNewContext(cdp.buildHomeStudioChannelExpression(cdp.DEFAULT_CONFIG), sandbox);
     vm.runInNewContext(cdp.buildSettingsChannelExpression(), sandbox);
 
     // 1. Q&A takeover card alone: wrapper raised by 46px with data-ag-cs-takeover="1"
@@ -1482,8 +1485,9 @@ test('v3.5.1 mounts dual mascot stage, brand optical glyphs, Orchestrator crysta
   try {
     const res = vm.runInNewContext(cdp.buildInjectExpression(cdp.DEFAULT_CONFIG), sandbox);
     assert.equal(res.status, 'ok');
-    // Load Channel 10 Mascot (split out of Channel 1) & Channel 9 Settings on demand
+    // Load Channel 10 Mascot, Channel 12 Home Studio (split out of Channel 1) & Channel 9 Settings on demand
     vm.runInNewContext(cdp.buildMascotChannelExpression(cdp.DEFAULT_CONFIG), sandbox);
+    vm.runInNewContext(cdp.buildHomeStudioChannelExpression(cdp.DEFAULT_CONFIG), sandbox);
     vm.runInNewContext(cdp.buildSettingsChannelExpression(), sandbox);
 
     // 1. Dual mascot stage mounts 2 real actor canvases (Clawd & Cat, 96x84)
@@ -3233,9 +3237,11 @@ test('v1.0.1 compiler safety fixes, unified shared string pool (< 690 KiB CI bud
   assert.ok(expr2.includes('"palette":"warm"'));
   assert.ok(expr2.includes('"accentTone":"iris"'));
 
-  // 6. All 6 extracted/Wave2 microkernel domain modules registered in RUNTIME_PARTS & SYNC_ROOT_FILES
+  // 6. Extracted/Wave2 microkernel domain modules registered in RUNTIME_PARTS (or DEFERRED_ROOT_MODULES for Channel 12) & SYNC_ROOT_FILES
+  assert.equal(cdp.RUNTIME_PARTS.includes('home-studio-panel.js'), false, 'home-studio-panel.js must be split out of Channel 1 RUNTIME_PARTS into Channel 12');
+  assert.ok(cdp.DEFERRED_ROOT_MODULES.includes('home-studio-panel.js'), 'Missing home-studio-panel.js in DEFERRED_ROOT_MODULES');
+  assert.ok(cdp.SYNC_ROOT_FILES.includes('home-studio-panel.js'), 'Missing home-studio-panel.js in SYNC_ROOT_FILES');
   for (const modName of [
-    'home-studio-panel.js',
     'home-ripple-host.js',
     'model-glyph-crystal.js',
     'stream-choreography.js',
@@ -3428,11 +3434,23 @@ test('v1.0.1 compiler safety fixes, unified shared string pool (< 690 KiB CI bud
     assert.equal(removeFired, true, 'Once non-host page lacks workbench DOM, daemon cleanly detaches with REMOVE_EXPRESSION');
     assert.equal(daemon.sessions.has('ws://127.0.0.1:14470/live-workbench'), false);
   }
-  const reconciledLegacy = cdp.reconcileConfigAliases({ ripple: 'off', homeMode: 'classic', lang: 'en', sidebar: 'off' });
+  const reconciledLegacy = cdp.reconcileConfigAliases({ ripple: 'off', convRipple: 'on', homeMode: 'classic', lang: 'en', sidebar: 'off' });
   assert.equal(reconciledLegacy.homeRipple, false);
+  assert.equal(reconciledLegacy.convRipple, 'medium');
+  assert.equal(cdp.reconcileConfigAliases({ convRipple: true }).convRipple, 'medium');
+  assert.equal(cdp.reconcileConfigAliases({ convRipple: false }).convRipple, 'off');
+  assert.equal(cdp.reconcileConfigAliases({ convRipple: 'full' }).convRipple, 'full');
   assert.equal(reconciledLegacy.homeLayout, 'classic');
   assert.equal(reconciledLegacy.language, 'en');
   assert.equal(reconciledLegacy.sidebarRestyle, false);
+  assert.equal(cdp.DEFAULT_CONFIG.convRipple, 'off');
+  for (const tier of ['off', 'subtle', 'medium', 'full']) {
+    assert.equal(cdp.validateConfigEntry('convRipple', tier), true);
+  }
+  assert.equal(cdp.validateConfigEntry('convRipple', 'invalid'), false);
+  for (const k of ['setConvRippleTitle', 'setConvRippleDesc', 'optConvRippleOff', 'optConvRippleSubtle', 'optConvRippleMedium', 'optConvRippleFull']) {
+    assert.equal(expr1.includes(k), false);
+  }
 
   // In-page host identity guard aborts cleanly on foreign user preview pages
   const foreignStyles = [];

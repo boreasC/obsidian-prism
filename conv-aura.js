@@ -38,9 +38,11 @@
   let cachedRunningVal = false;
   let cachedRunningAt = -1;
   let cachedRunningEl = null;
+  let cachedRunningScope = null;
   let cachedDecisionVal = false;
   let cachedDecisionAt = -1;
   let cachedDecisionEl = null;
+  let cachedDecisionScope = null;
   let cachedErrorAt = -1;
   let lastFullVisAt = -1;
   const seenErrorNodes = typeof WeakSet === 'function' ? new WeakSet() : null;
@@ -54,7 +56,21 @@
   const DECISION_SEL = '[data-testid="interaction-takeover-card"], [data-testid="side-question-panel"]';
   const SUBAGENT_SEL = '[data-testid="subagent-tab-conversation"]';
 
-  function isLiveMatchedIndicator(el, sel, skipSyncVis = false) {
+  function isWithinScope(el, scope) {
+    if (!el) return false;
+    if (!scope || scope === document) return true;
+    if (el === scope) return true;
+    if (typeof scope.contains === 'function' && scope.contains(el)) return true;
+    const ownerView = el.closest?.('[data-testid="conversation-view"]') || null;
+    if (ownerView) return ownerView === scope;
+    const allViews =
+      typeof document !== 'undefined' && typeof document.querySelectorAll === 'function'
+        ? document.querySelectorAll('[data-testid="conversation-view"]')
+        : null;
+    return !allViews || allViews.length <= 1;
+  }
+
+  function isLiveMatchedIndicator(el, sel, skipSyncVis = false, scope = null) {
     return Boolean(
       el &&
         el.isConnected === true &&
@@ -62,61 +78,69 @@
         typeof el.matches === 'function' &&
         el.matches(sel) &&
         !el.closest?.(SUBAGENT_SEL) &&
+        isWithinScope(el, scope) &&
         isVisibleAuraNode(el, skipSyncVis)
     );
   }
 
-  function isConvRunning(skipSyncVis = false) {
+  function queryScopedIndicator(scope, sel, skipSyncVis) {
+    const nodes = scope.querySelectorAll(sel);
+    for (const n of nodes) {
+      if (n.closest?.(SUBAGENT_SEL)) continue;
+      if (isVisibleAuraNode(n, skipSyncVis)) return n;
+    }
+    if (scope !== document && typeof document.querySelectorAll === 'function') {
+      const allViews = document.querySelectorAll('[data-testid="conversation-view"]');
+      const singlePane = !allViews || allViews.length <= 1;
+      const docNodes = document.querySelectorAll(sel);
+      for (const n of docNodes) {
+        if (n.closest?.(SUBAGENT_SEL)) continue;
+        const ownerView = n.closest?.('[data-testid="conversation-view"]') || null;
+        if (ownerView && ownerView !== scope) continue;
+        if (!ownerView && !singlePane) continue;
+        if (isVisibleAuraNode(n, skipSyncVis)) return n;
+      }
+    }
+    return null;
+  }
+
+  function isConvRunning(skipSyncVis = false, scopeEl = null) {
     if (typeof document === 'undefined') return false;
+    const scope = scopeEl && typeof scopeEl.querySelectorAll === 'function' ? scopeEl : document;
     const now = readNowMs();
-    if (cachedRunningAt >= 0 && Math.abs(now - cachedRunningAt) < 200) {
+    if (cachedRunningScope === scope && cachedRunningAt >= 0 && Math.abs(now - cachedRunningAt) < 200) {
       return cachedRunningVal;
     }
-    if (isLiveMatchedIndicator(cachedRunningEl, RUNNING_SEL, skipSyncVis)) {
+    if (cachedRunningScope === scope && isLiveMatchedIndicator(cachedRunningEl, RUNNING_SEL, skipSyncVis, scope)) {
       cachedRunningVal = true;
       cachedRunningAt = now;
       if (!skipSyncVis) lastFullVisAt = now;
       return true;
     }
-    cachedRunningEl = null;
-    const nodes = document.querySelectorAll(RUNNING_SEL);
-    let running = false;
-    for (const n of nodes) {
-      if (n.closest?.(SUBAGENT_SEL)) continue;
-      if (isVisibleAuraNode(n, skipSyncVis)) {
-        running = true;
-        cachedRunningEl = n;
-        break;
-      }
-    }
+    cachedRunningEl = queryScopedIndicator(scope, RUNNING_SEL, skipSyncVis);
+    const running = Boolean(cachedRunningEl);
+    cachedRunningScope = scope;
     cachedRunningVal = running;
     cachedRunningAt = now;
     if (!skipSyncVis) lastFullVisAt = now;
     return running;
   }
 
-  function isAwaitingDecision(skipSyncVis = false) {
+  function isAwaitingDecision(skipSyncVis = false, scopeEl = null) {
     if (typeof document === 'undefined') return false;
+    const scope = scopeEl && typeof scopeEl.querySelectorAll === 'function' ? scopeEl : document;
     const now = readNowMs();
-    if (cachedDecisionAt >= 0 && Math.abs(now - cachedDecisionAt) < 200) {
+    if (cachedDecisionScope === scope && cachedDecisionAt >= 0 && Math.abs(now - cachedDecisionAt) < 200) {
       return cachedDecisionVal;
     }
-    if (isLiveMatchedIndicator(cachedDecisionEl, DECISION_SEL, skipSyncVis)) {
+    if (cachedDecisionScope === scope && isLiveMatchedIndicator(cachedDecisionEl, DECISION_SEL, skipSyncVis, scope)) {
       cachedDecisionVal = true;
       cachedDecisionAt = now;
       return true;
     }
-    cachedDecisionEl = null;
-    const nodes = document.querySelectorAll(DECISION_SEL);
-    let awaiting = false;
-    for (const n of nodes) {
-      if (n.closest?.(SUBAGENT_SEL)) continue;
-      if (isVisibleAuraNode(n, skipSyncVis)) {
-        awaiting = true;
-        cachedDecisionEl = n;
-        break;
-      }
-    }
+    cachedDecisionEl = queryScopedIndicator(scope, DECISION_SEL, skipSyncVis);
+    const awaiting = Boolean(cachedDecisionEl);
+    cachedDecisionScope = scope;
     cachedDecisionVal = awaiting;
     cachedDecisionAt = now;
     return awaiting;
@@ -336,6 +360,7 @@
     runGuardedMut,
   }) {
     let convAura = null;
+    let preferredView = null;
     let overrideAmbient = null;
     let overrideSpectrum = null;
     let externalAwaiting = null;
@@ -383,21 +408,34 @@
       return true;
     }
 
+    function isValidConvView(cv) {
+      return Boolean(
+        cv &&
+          cv.isConnected !== false &&
+          !cv.closest?.('.agy-home') &&
+          !cv.closest?.(SUBAGENT_SEL) &&
+          !cv.querySelector?.('.agy-home')
+      );
+    }
+
+    function resolveConvViewTarget(target) {
+      if (!target) return null;
+      const cv = target.matches?.('[data-testid="conversation-view"]')
+        ? target
+        : target.closest?.('[data-testid="conversation-view"]');
+      return isValidConvView(cv) ? cv : null;
+    }
+
     function findConvAuraView() {
       if (typeof document === 'undefined' || !isHomeRippleEnabled() || document.querySelector('.agy-home')) return null;
-      if (
-        convAura &&
-        convAura.convView &&
-        convAura.convView.isConnected !== false &&
-        !convAura.convView.closest?.('.agy-home') &&
-        !convAura.convView.closest?.('[data-testid="subagent-tab-conversation"]')
-      ) {
-        return convAura.convView;
-      }
+      if (isValidConvView(preferredView)) return preferredView;
+      preferredView = null;
+      const actCv = resolveConvViewTarget(document.activeElement);
+      if (actCv) return actCv;
+      if (convAura && isValidConvView(convAura.convView)) return convAura.convView;
       const views = document.querySelectorAll('[data-testid="conversation-view"]');
       for (const cv of views) {
-        if (cv.closest?.('.agy-home') || cv.closest?.('[data-testid="subagent-tab-conversation"]')) continue;
-        return cv;
+        if (isValidConvView(cv)) return cv;
       }
       return null;
     }
@@ -435,9 +473,10 @@
     function advancePhase(now = readNowMs(), fromAnimLoop = false) {
       if (!convAura || !convAura.host || !convAura.host.isConnected) return 'off';
       const skipSyncVis = Boolean(fromAnimLoop && lastFullVisAt >= 0 && Math.abs(now - lastFullVisAt) < 2000);
-      const runningNow = isConvRunning(skipSyncVis);
-      const awaitingNow = externalAwaiting !== null ? Boolean(externalAwaiting) : isAwaitingDecision(skipSyncVis);
-      const freshErr = externalErrorPending || (!runningNow && consumeFreshDomError(convAura.convView));
+      const scope = convAura.convView || null;
+      const runningNow = isConvRunning(skipSyncVis, scope);
+      const awaitingNow = externalAwaiting !== null ? Boolean(externalAwaiting) : isAwaitingDecision(skipSyncVis, scope);
+      const freshErr = externalErrorPending || (!runningNow && consumeFreshDomError(scope));
       if (externalErrorPending) externalErrorPending = false;
 
       if (freshErr) {
@@ -527,6 +566,7 @@
     }
 
     function unmount() {
+      preferredView = null;
       if (!convAura) return;
       const a = convAura;
       detachFocusWakeListeners(a);
@@ -558,9 +598,10 @@
       cachedDecisionAt = -1;
       cachedErrorAt = -1;
       if (isDestroyed() || !isHomeRippleEnabled()) return;
-      if (!findConvAuraView()) return;
-      isConvRunning();
-      if (externalAwaiting === null) isAwaitingDecision();
+      const cv = findConvAuraView();
+      if (!cv) return;
+      isConvRunning(false, cv);
+      if (externalAwaiting === null) isAwaitingDecision(false, cv);
     }
 
     function sync(preserveCache = false) {
@@ -581,12 +622,13 @@
       }
 
       if (convAura) {
-        if (convAura.seatParent !== seatParent || !convAura.host.isConnected || !convAura.canvas.isConnected) {
+        if (convAura.seatParent !== seatParent || convAura.convView !== convView || !convAura.host.isConnected || !convAura.canvas.isConnected) {
           if (convAura.ro) {
             try {
               convAura.ro.disconnect();
             } catch {}
           }
+          const switchedPane = convAura.convView !== convView;
           convAura.seatParent = seatParent;
           convAura.convView = convView;
           convAura.parked = false;
@@ -597,6 +639,7 @@
             } catch {}
           }
           const canDeferRelayout =
+            !switchedPane &&
             !convAura.backingReleased &&
             Boolean(convAura.ro) &&
             convAura.width > 0 &&
@@ -605,13 +648,14 @@
             !document.hidden;
           if (!canDeferRelayout && typeof convAura.relayout === 'function') convAura.relayout();
           const nowRe = readNowMs();
-          const runRe = isConvRunning();
+          const runRe = isConvRunning(false, convView);
+          const awaitRe = externalAwaiting !== null ? Boolean(externalAwaiting) : isAwaitingDecision(false, convView);
           convAura.wasRunning = runRe;
           convAura.runStartedAt = runRe ? nowRe : 0;
           convAura.decisionHolding = false;
           convAura.unfocusedHold = false;
           convAura.sleepReason = '';
-          convAura.phase = runRe ? 'running' : 'idle';
+          convAura.phase = awaitRe ? 'awaiting-decision' : runRe ? 'running' : 'idle';
           convAura.phaseAt = nowRe;
           setAttrIfChanged(convAura.host, 'data-aura-phase', convAura.phase);
           convAura.wake(!canDeferRelayout);
@@ -660,8 +704,8 @@
       seatParent.insertBefore(host, seatParent.firstChild);
 
       const initNow = readNowMs();
-      const initRunning = isConvRunning();
-      const initAwaiting = externalAwaiting !== null ? Boolean(externalAwaiting) : isAwaitingDecision();
+      const initRunning = isConvRunning(false, convView);
+      const initAwaiting = externalAwaiting !== null ? Boolean(externalAwaiting) : isAwaitingDecision(false, convView);
       const initPhase = initAwaiting ? 'awaiting-decision' : initRunning ? 'running' : 'idle';
       host.setAttribute('data-aura-phase', initPhase);
       consumeFreshDomError(convView); // prime historical errors without firing false alarm on initial mount
@@ -1020,7 +1064,18 @@
       };
       const onBlur = () => { wb = true; enterAuraSleep('hidden'); };
       const onFocus = () => { wb = false; onVis(); };
+      const onPaneAct = (ev) => {
+        if (isDestroyed()) return;
+        const cv = resolveConvViewTarget(ev?.target);
+        if (cv && cv !== preferredView) {
+          preferredView = cv;
+          if (convAura && convAura.convView !== cv) sync(false);
+        }
+      };
+      const capOpt = { capture: true, passive: true };
       document.addEventListener('visibilitychange', onVis);
+      document.addEventListener('focusin', onPaneAct, capOpt);
+      document.addEventListener('pointerdown', onPaneAct, capOpt);
       const wRef = typeof window !== 'undefined' ? window : null;
       wRef?.addEventListener?.('blur', onBlur);
       wRef?.addEventListener?.('focus', onFocus);
@@ -1032,7 +1087,11 @@
         } catch {}
       }
       state.uW = () => {
-        if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVis);
+        if (typeof document !== 'undefined') {
+          document.removeEventListener('visibilitychange', onVis);
+          document.removeEventListener('focusin', onPaneAct, capOpt);
+          document.removeEventListener('pointerdown', onPaneAct, capOpt);
+        }
         wRef?.removeEventListener?.('blur', onBlur);
         wRef?.removeEventListener?.('focus', onFocus);
         bMo?.disconnect();
@@ -1081,9 +1140,24 @@
       wake(true);
     }
 
-    function triggerStart() {
+    function setActiveView(target = null) {
+      const next = target ? resolveConvViewTarget(target) : null;
+      preferredView = next;
+      if (convAura && next && convAura.convView !== next) sync(false);
+      return convAura?.convView || preferredView || null;
+    }
+
+    function getActiveView() {
+      return convAura?.convView || (isValidConvView(preferredView) ? preferredView : null);
+    }
+
+    function triggerStart(target = null) {
       if (isDestroyed() || !isHomeRippleEnabled()) return;
-      if (!convAura) sync();
+      if (target) {
+        const cv = resolveConvViewTarget(target);
+        if (cv) preferredView = cv;
+      }
+      if (!convAura || (preferredView && convAura.convView !== preferredView)) sync();
       if (!convAura) return;
       const now = readNowMs();
       detachFocusWakeListeners(convAura);
@@ -1099,8 +1173,12 @@
       convAura.wake(true);
     }
 
-    function triggerLiftoffEbb(now = readNowMs()) {
-      if (!convAura) sync();
+    function triggerLiftoffEbb(now = readNowMs(), target = null) {
+      if (target) {
+        const cv = resolveConvViewTarget(target);
+        if (cv) preferredView = cv;
+      }
+      if (!convAura || (preferredView && convAura.convView !== preferredView)) sync();
       if (convAura) {
         convAura.liftoffAt = now;
         convAura.sleepReason = '';
@@ -1183,6 +1261,8 @@
       sync,
       unmount,
       wake,
+      setActiveView,
+      getActiveView,
       triggerStart,
       triggerLiftoffEbb,
       advancePhase,

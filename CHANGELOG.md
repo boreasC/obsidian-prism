@@ -5,6 +5,44 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 本项目遵循语义化版本（SemVer）规范，记录各正式版本的新增功能、架构变更、安全加固与缺陷修复。
 
+## [1.0.8-beta.2] - 2026-11-25
+
+> **Obsidian Prism `v1.0.8-beta.2` 预发布版**在 `v1.0.8-beta.1` 基础上重点交付 **多分屏视图（Split View）全量适配与 Channel 12 首页看板卸载**、**4 档可选「对话页字符波纹」与 WebGL2 三层防白屏自愈加固**、**Antigravity `v2.34+` 壳层自定义壁纸透出修复**、**Windows 托盘退出与 Linux 便携包更新器修复**，以及 **2 个社区 PR（#60 / #61）深度融合**。
+
+### Multi-Pane Split View & Channel 12 Offload / 多分屏视图适配与 Channel 12 卸载
+
+- **多分屏视图布局、窗格级状态隔离与 Channel 12 首页看板外移（[#62](https://github.com/RMvdesi/obsidian-prism/issues/62)）**：
+  - 统一多分屏分割栏（Divider / Sash）视觉：宽热区本体置透明，静止态收敛为克制 `1px` 低对比度暗线（适配深浅双主题），悬停与拖动保留平滑发光高亮；
+  - 为每个可见分屏独立挂载遥测状态条（绑定各自会话 ID、独立窄屏折叠且切换焦点零跳变）与统一棱镜流光边缘，实现推理滑块、元素周期表触发器与异阵营 Thought 图标窗格级隔离；桌宠、底部光晕与上下文水瓶保持单份资源平滑跟随当前聚焦分屏（展开水瓶卡片时桌宠自动 `peek` 避让）；
+  - 将 Home Studio 首页看板逻辑外移至独立按需 **Channel 12**，进一步释放 Channel 1 主通道体积余量。
+  - *Multi-Pane Split View, Per-Pane Telemetry Isolation & Channel 12 Offload (#62)*: Converges static Split View sashes to subtle `1px` dark/light hairlines while keeping hover/drag glow; mounts independent per-pane telemetry bars (session-scoped, narrow collapse, zero focus-jump) and prism rims with pane-isolated Effort sliders, Periodic Picker triggers, and Thought badges; smoothly follows active focus for the shared mascot, aura, and context vial (with `peek` clearance when the vial card opens); and offloads Home Studio to on-demand Channel 12.
+
+### Conversation Matrix Ripple & WebGL2 Self-Healing / 对话页字符波纹与 WebGL2 防白屏自愈
+
+- **4 档「对话页字符波纹」分段控制与 `v2.35` 分屏修复（[#63](https://github.com/RMvdesi/obsidian-prism/issues/63)）**：
+  - 在设置面板「外观」新增单行 4 档「对话页字符波纹（`关闭 / 微光 / 标准 / 鲜明`）」开关（默认关闭，支持 8 语种且不依赖 `homeLayout` 开关），通过主壳单一共享 WebGL2 Canvas 跨分屏连贯渲染（跳过 `glowCanvas`、切档即时热更新、流式/静止 `0fps` 休眠并自动避让自定义壁纸与浏览器分屏）；
+  - 同步修复 Antigravity `v2.35` 分屏背景容器穿透。
+  - *4-Tier Conversation Matrix Ripple & v2.35 Split Backdrop (#63)*: Adds an opt-in 4-tier `convRipple` segmented control (`Off / Subtle / Medium / Full`, default `Off`, 8 locales, independent of `homeLayout`) rendered on one continuous main-shell WebGL2 canvas across split panes with live tier hot-swap, `0fps` idle/streaming sleep, wallpaper/browser-hole yielding, and v2.35 split backdrop fixes.
+- **WebGL2 缩放上下文保留与三层防白屏自愈加固（[#64](https://github.com/RMvdesi/obsidian-prism/issues/64) · [PR #60](https://github.com/RMvdesi/obsidian-prism/pull/60)）**：
+  - 吸收 [PR #60](https://github.com/RMvdesi/obsidian-prism/pull/60) 根治窗口/终端 resize（如 `Ctrl+J`）及侧栏宽度拖动时因调用 `loseContext()` 导致的纯白画布与破损图标问题，并隔离同步异常；
+  - 叠加三层深层自愈加固：解除 Chromium 同 `<canvas>` WebGL2 失败后 `getContext('2d')` 永久返 `null` 的降级死锁（自动换新 `<canvas>` 走真 2D 回退，全失败自动隐藏零白块）；对称补齐首页顶光 `glowCanvas` 生命周期与失活换画布；监听异步 `webglcontextlost` 瞬时隐藏并防抖自愈（连续失活自动稳态降级 2D）。
+  - *WebGL2 Resize Context Preservation & 3-Layer White-Screen Self-Healing (#64 / PR #60)*: Integrates PR #60 to keep WebGL2 contexts alive across terminal (`Ctrl+J`) and sidebar resizes while isolating sync errors; breaks Chromium's same-canvas `getContext('2d') -> null` fallback deadlock by swapping in a fresh canvas; hardens `glowCanvas` lifecycle symmetry; and adds debounced async `webglcontextlost` hide-and-recover with automatic 2D stabilization.
+
+### Custom Wallpaper, Tray Quit & Linux Updater Fixes / 壁纸透出、托盘退出与更新器修复
+
+- **自定义壁纸 `v2.34+` 壳层穿透、Windows 托盘安全退出与 Linux 更新器修复（[#59](https://github.com/RMvdesi/obsidian-prism/issues/59) · [PR #61](https://github.com/RMvdesi/obsidian-prism/pull/61)）**：
+  - 修复 Antigravity `v2.34+` 新增的 `.agy-inset-shell` / `.agy-sheet` 与内层 `flex-1` 容器及 `.agy-shell .bg-sidebar` 遮挡自定义壁纸的问题，并适度下调深浅双主题 `[data-ag-cs-conv-seat="1"]` 遮罩透明度；
+  - 吸收 [PR #61](https://github.com/RMvdesi/obsidian-prism/pull/61) 修复 Windows 托盘退出 `HOST_EXIT_TIMEOUT` 与深色存储守卫横幅对比度，并强化回环 CDP `Browser.close` 目标校验（经由 `this.browserPort` 强校验 `/json/list` 与 `DevToolsActivePort` 路径，防止旧端口复用误关其他应用）与 ACK 超时快速回退；
+  - 修复 Linux 更新器精准匹配 `obsidian-prism-linux-portable.tar.gz` Release 资产。
+  - *Custom Wallpaper v2.34+ Reveal, Windows Tray Quit & Linux Updater Fix (#59 / PR #61)*: Clears opaque `.agy-inset-shell`/`.agy-sheet`/`flex-1`/`.bg-sidebar` blockers over custom wallpapers with tuned dual-theme `[data-ag-cs-conv-seat="1"]` opacity; integrates PR #61 with strict `/json/list` + `DevToolsActivePort` target verification via `this.browserPort` before `Browser.close` and immediate timeout fallback; and resolves the `obsidian-prism-linux-portable.tar.gz` asset on Linux.
+
+### Acknowledgements / 社区致谢（Community Credits）
+
+- 衷心感谢推动 `v1.0.8-beta.2` 落地的社区贡献者与验票伙伴（已同步收录至 [`CONTRIBUTORS.md`](./CONTRIBUTORS.md) 并保留 `Co-authored-by` 署名）：
+  - **代码贡献（PR）**：**[@OyatsuSuki](https://github.com/OyatsuSuki)**（[PR #60](https://github.com/RMvdesi/obsidian-prism/pull/60) · [PR #61](https://github.com/RMvdesi/obsidian-prism/pull/61)）。
+  - **问题定位与实测验证**：**[@IASUI](https://github.com/IASUI)**（[#62](https://github.com/RMvdesi/obsidian-prism/issues/62)）、**[@VehideX](https://github.com/VehideX)**（[#63](https://github.com/RMvdesi/obsidian-prism/issues/63)）、**[@water707](https://github.com/water707)**（[#64](https://github.com/RMvdesi/obsidian-prism/issues/64)）、**[@yuaniyuan](https://github.com/yuaniyuan)**（[#59](https://github.com/RMvdesi/obsidian-prism/issues/59)）、**[@Xinbeok](https://github.com/Xinbeok)**（PR #60 macOS 验证）。
+  - *Special thanks to [@OyatsuSuki](https://github.com/OyatsuSuki) (PR #60/#61), [@IASUI](https://github.com/IASUI) (#62), [@VehideX](https://github.com/VehideX) (#63), [@water707](https://github.com/water707) (#64), [@yuaniyuan](https://github.com/yuaniyuan) (#59), and [@Xinbeok](https://github.com/Xinbeok) (PR #60 macOS verification).*
+
 ## [1.0.8-beta.1] - 2026-11-25
 
 > **Obsidian Prism `v1.0.8-beta.1` 预发布版**引入按需 **3D 机械键盘「元素周期表」模型选择器（Channel 8）**、**8 语完整国际化与 Channel 1 瘦身（-136 KB）**、**4 层零风控 `language_server` 内存治理与存储明细工作台**、**完整 Linux 原生支持**、**四物种像素桌宠与 3D 视差黑曜石星辰酒馆像素舞台**、**Omni 默认安全沙盒预览与 Prompt Suggester（Channel 11）**，以及面向 **Antigravity `v2.35.0` / `v2.35.1`** 的视觉精修与 12 个社区 PR 集成。

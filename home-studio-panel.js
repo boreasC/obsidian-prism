@@ -83,7 +83,7 @@ de|Subagenten|Token||Ein|Aus|Wenig Kontingent|Wird knapp|Reichlich|Was steht als
     storageUsageCacheKey = 'ag-prism:trajRollup.v1',
     scopeKey: scOpt = '',
     waitTickMs = 120,
-    isDestroyed,
+    isDestroyed: isHostDestroyed,
     getHomeLayout,
     getLang,
     uiText,
@@ -93,6 +93,8 @@ de|Subagenten|Token||Ein|Aus|Wenig Kontingent|Wird knapp|Reichlich|Was steht als
     setAttrIfChanged,
     runGuardedMut,
   }) {
+    let disposed = false;
+    const isDestroyed = () => disposed || Boolean(isHostDestroyed?.());
     const usageRecords = new Map();
     const replacedGreetings = new Map();
     let usageLoading = false;
@@ -706,7 +708,7 @@ de|Subagenten|Token||Ein|Aus|Wenig Kontingent|Wird knapp|Reichlich|Was steht als
     };
 
     const renderHomePanel = (force = false) => {
-      if (!usageCore) return;
+      if (isDestroyed() || !usageCore) return;
       const panel = ensurePanelSeat();
       if (!panel) return;
       const fmtTok = usageCore.formatCompactTokens;
@@ -910,7 +912,7 @@ de|Subagenten|Token||Ein|Aus|Wenig Kontingent|Wird knapp|Reichlich|Was steht als
             const axis = dv(cC + 'axis');
             ap(panel, ap(dv(HC + 'chart'), plot, axis));
             G.requestAnimationFrame?.(() => {
-              if (!axis.isConnected) return;
+              if (isDestroyed() || !axis.isConnected) return;
               const labels = columns.map((c) => usageCore.homeShortDate(fmt, c.date));
               const ticks = usageCore.homeChartTicks(labels.map((l) => Math.max(32, l.length * 6.5)), plot.clientWidth || 420);
               runGuardedMut(() => {
@@ -946,6 +948,18 @@ de|Subagenten|Token||Ein|Aus|Wenig Kontingent|Wird knapp|Reichlich|Was steht als
       if (focusSel) try { panel.querySelector?.(focusSel)?.focus?.(); } catch {}
     };
 
+    const dispose = () => {
+      if (disposed) return;
+      flushUsageCacheNow();
+      disposed = true;
+      unmountPanelSeat();
+      restoreGreetings();
+      usageRecords.clear();
+      cachedAggData = null;
+      liveQuotaSnap = null;
+      quotaPending = null;
+    };
+
     return {
       scheduleUsageRollupRefresh,
       refreshUsageRollup,
@@ -956,6 +970,7 @@ de|Subagenten|Token||Ein|Aus|Wenig Kontingent|Wird knapp|Reichlich|Was steht als
       unmountPanelSeat,
       renderHomePanel,
       flushUsageCacheNow,
+      dispose,
       wasHero: () => wasHero,
       getScopeKey: () => curScope,
       getUsageRecordsCount: () => usageRecords.size,
@@ -966,4 +981,5 @@ de|Subagenten|Token||Ein|Aus|Wenig Kontingent|Wird knapp|Reichlich|Was steht als
   const api = { createHomeStudioPanelController, hasPersistedTokens };
   if (typeof module === 'object' && module.exports) module.exports = api;
   G.__agPrismHomeStudioPanel = api;
+  G.__agHomeStudioPanel = api;
 })(typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : this);

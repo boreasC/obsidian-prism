@@ -2,7 +2,7 @@
   if (typeof module === 'object' && module.exports) module.exports = factory;
   else root.__agCsUiMain = factory;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function (initialConfig) {
-  const VERSION = '1.0.8-beta.1';
+  const VERSION = '1.0.8-beta.2';
   const D = document, W = window, GT = globalThis, ST = setTimeout, CT = clearTimeout, O = Object, AF = Array.from, SJ = JSON.stringify, LS = typeof localStorage !== 'undefined' ? localStorage : null;
   const LEGACY_API_VERSION = 3;
   const CODE_HASH = initialConfig?.codeHash || '';
@@ -81,7 +81,7 @@
     W.__agCsLocales = shim;
   };
   if (initialConfig && initialConfig.__uiSlice) ensureLiteLocalesShim(initialConfig.__uiSlice);
-  const homeStudioMod = GT.__agPrismHomeStudioPanel;
+  const getHomeStudioMod = () => GT.__agPrismHomeStudioPanel || W.__agPrismHomeStudioPanel || GT.__agHomeStudioPanel || W.__agHomeStudioPanel || null;
   const homeRippleMod = GT.__agPrismHomeRippleHost;
   const modelGlyphMod = GT.__agPrismModelGlyphCrystal;
   const streamChoreoMod = GT.__agPrismStreamChoreography;
@@ -130,6 +130,7 @@
   const BOOL_ALIAS_PAIRS = [['homeRipple', 'ripple'], ['composerRestyle', 'composer'], ['sidebarRestyle', 'sidebar']];
   const ONOFF_STR_KEYS = 'telemetryModule|effortSliderModule|effortMemory|periodicModelPicker|omniModule|sidebarStudio|autoUpdate|sidebarNavFold'.split('|');
   const pickOf = (v, s, d) => (s.split('|').includes(v) ? v : d);
+  const normConvRipple = (v) => (v === true || v === 'true' || v === 'on' ? 'medium' : pickOf(v, 'subtle|medium|full', 'off'));
 
   const normalizeConfigShape = (rawCfg) => {
     const out = { ...(rawCfg || {}) };
@@ -149,6 +150,7 @@
     }
     out.placeholderStyle = out.promptStyle = (out.placeholderStyle ?? out.promptStyle) === 'host' ? 'host' : 'studio';
     out.mascot = out.mascot === 'off' || out.mascot === false ? 'off' : /^(minis|quad(-minis)?|r:[ckdw0-4,+m]+)$/.test(out.mascot) ? out.mascot : 'crab';
+    out.convRipple = normConvRipple(out.convRipple);
     for (const k of ['sidebarCompact', 'codeLigatures', 'autoArchiveOnExit']) out[k] = out[k] === true || out[k] === 'on';
     for (const k of ['sidebarNavFold', 'sidebarStudio', 'autoUpdate']) out[k] = out[k] === 'on' || out[k] === true ? 'on' : 'off';
     for (const k of ['smoothCaret', 'contextMenu']) out[k] = out[k] === undefined ? true : out[k] !== false && out[k] !== 'off';
@@ -192,6 +194,7 @@
         patch[sKey] = on ? 'on' : 'off';
       }
     }
+    if ('convRipple' in patch) patch.convRipple = normConvRipple(patch.convRipple);
     for (const k of ['sidebarCompact', 'codeLigatures', 'autoArchiveOnExit']) {
       if (k in patch && typeof patch[k] === 'string') patch[k] = patch[k] === 'on' || patch[k] === 'true';
     }
@@ -287,7 +290,7 @@
     const any = (s) => s.split('|').some((k) => prevCfg[k] !== nextCfg[k] || O.hasOwn(patch, k));
     if (any('palette|lightPreset|accentTone|ambientIntensity|cornerStyle|codeFont|codeLigatures')) dirtyFlags.t = true;
     if (any('accentTone|composerRestyle|placeholderStyle|mascot|smoothCaret|telemetryModule|motionLevel|language')) dirtyFlags.c = true;
-    if (any('homeLayout|homeRipple|language')) dirtyFlags.r = true;
+    if (any('homeLayout|homeRipple|convRipple|motionLevel|language')) dirtyFlags.r = true;
     if (any('sidebarRestyle|sidebarCompact|sidebarNavFold')) dirtyFlags.s = true;
     if (any('thoughtTranslate|thoughtTrigger|thoughtView')) dirtyFlags.l = dirtyFlags.tk = true;
   };
@@ -645,14 +648,19 @@
       }
     }
 
-    if (msOrch !== null && msOrch !== isOrch) {
-      notifyMascot('orchestrator', { on: isOrch });
+    if (reattached) {
+      msOrch = isOrch;
+      msLastTier = curTier;
+    } else {
+      if (msOrch !== null && msOrch !== isOrch) {
+        notifyMascot('orchestrator', { on: isOrch });
+      }
+      msOrch = isOrch;
+      if (msLastTier !== undefined && msLastTier !== curTier && (curTier === 'high' || curTier === 'xhigh')) {
+        notifyMascot('effort-tier', { tier: curTier });
+      }
+      msLastTier = curTier;
     }
-    msOrch = isOrch;
-    if (msLastTier !== undefined && msLastTier !== curTier && (curTier === 'high' || curTier === 'xhigh')) {
-      notifyMascot('effort-tier', { tier: curTier });
-    }
-    msLastTier = curTier;
     const chatSleep = ga(html, 'data-ag-prism-mode') === 'chat';
     if (msLastHostSleep !== chatSleep) {
       msLastHostSleep = chatSleep;
@@ -664,31 +672,81 @@
   const noopFn = () => null;
   const noopStub = (ov = {}) => new Proxy(ov, { get: (t, k) => (k in t ? t[k] : noopFn) });
 
-  const homeStudioCtl = homeStudioMod?.createHomeStudioPanelController
-    ? homeStudioMod.createHomeStudioPanelController({
-        usageCore,
-        storageUsageCacheKey: STORAGE_USAGE_CACHE_KEY,
-        isDestroyed: () => destroyed,
-        getHomeLayout: () => cfg.homeLayout,
-        getLang,
-        uiText,
-        getDisplayName,
-        ensureHooks,
-        canMountRealCanvas,
-        setAttrIfChanged,
-        runGuardedMut,
-      })
-    : noopStub({
-        wasHero: () => false,
-        getUsageRecordsCount: () => 0,
-        hasConnectedPanel: () => false,
-      });
+  const homeStudioFallback = noopStub({
+    wasHero: () => false,
+    getScopeKey: () => 'local',
+    getUsageRecordsCount: () => 0,
+    hasConnectedPanel: () => false,
+  });
+  let activeHomeStudioMod = null;
+  let activeHomeStudioInst = null;
+  let lastHomeStudioChannelReqAt = 0;
+
+  const disposeActiveHomeStudio = () => {
+    const prev = activeHomeStudioInst;
+    activeHomeStudioInst = null;
+    activeHomeStudioMod = null;
+    if (!prev) return;
+    if (isFn(prev.dispose)) { try { prev.dispose(); } catch {} return; }
+    for (const k of ['flushUsageCacheNow', 'unmountPanelSeat', 'restoreGreetings']) {
+      try { prev[k]?.(); } catch {}
+    }
+  };
+
+  const requestHomeStudioChannelIfNeeded = () => {
+    if (destroyed || cfg.homeLayout !== 'studio') return;
+    const now = Date.now();
+    if (now - lastHomeStudioChannelReqAt < 1000) return;
+    if (!qs(D, '.agy-home')) return;
+    const bindingName = currentBaseConfig?.binding || cfg?.binding || '__agPrismSetting';
+    const fn = W[bindingName];
+    if (!isFn(fn)) return;
+    lastHomeStudioChannelReqAt = now;
+    try { fn(JSON.stringify({ action: 'request-home-studio-panel' })); } catch {}
+  };
+
+  const resolveHomeStudioCtl = () => {
+    const mod = getHomeStudioMod();
+    if (!mod || !isFn(mod.createHomeStudioPanelController)) {
+      if (activeHomeStudioInst) disposeActiveHomeStudio();
+      return homeStudioFallback;
+    }
+    if (activeHomeStudioInst && activeHomeStudioMod === mod) return activeHomeStudioInst;
+    if (activeHomeStudioInst) disposeActiveHomeStudio();
+    if (destroyed) return homeStudioFallback;
+    activeHomeStudioMod = mod;
+    activeHomeStudioInst = mod.createHomeStudioPanelController({
+      usageCore,
+      storageUsageCacheKey: STORAGE_USAGE_CACHE_KEY,
+      isDestroyed: () => destroyed,
+      getHomeLayout: () => cfg.homeLayout,
+      getLang,
+      uiText,
+      getDisplayName,
+      ensureHooks,
+      canMountRealCanvas,
+      setAttrIfChanged,
+      runGuardedMut,
+    });
+    return activeHomeStudioInst;
+  };
+
+  const homeStudioCtl = new Proxy({}, {
+    get: (_, k) => (...args) => {
+      const ctl = resolveHomeStudioCtl();
+      const fn = ctl[k];
+      return isFn(fn) ? fn.apply(ctl, args) : null;
+    },
+  });
 
   const rippleCtl = homeRippleMod?.createHomeRippleController
     ? homeRippleMod.createHomeRippleController({
         rippleCore,
         isDestroyed: () => destroyed,
         isAllowed: () => cfg.homeRipple !== false && cfg.homeLayout !== 'off',
+        isConvAllowed: () => cfg.convRipple !== 'off',
+        getConvLevel: () => cfg.convRipple,
+        isConvRunning,
         isDarkTheme,
         motionReduced,
         getMinFrameGapMs,
@@ -962,6 +1020,7 @@
 
   const refreshOpenUiForLanguage = () => {
     const inHero = !!(qs(D, '.agy-home [data-testid="home-greeting"]'));
+    if (inHero && cfg.homeLayout === 'studio' && !getHomeStudioMod()) requestHomeStudioChannelIfNeeded();
     homeStudioCtl.syncGreeting(inHero);
     if (inHero && cfg.homeLayout === 'studio') { homeStudioCtl.renderHomePanel(true); const hp = qs(D, '.ag-cs-home-panel'); if (hp) { setAttrIfChanged(hp, A_PB, '1'); setAttrIfChanged(hp, A_PM, '1'); } }
     syncComposers(null);
@@ -1062,6 +1121,7 @@
       if (motionLv !== lastAppliedMotion) {
         const prevMotion = lastAppliedMotion;
         lastAppliedMotion = motionLv;
+        if (prevMotion) try { rippleCtl.sync?.(); } catch {}
         refreshOptics();
         if (prevMotion) {
           dirtyFlags.c = true; syncHostAnimatedIcons(null); streamChoreoCtl.syncDualStreamEngine();
@@ -1206,16 +1266,82 @@
     if (p.og) { const h = de(); if (p.tko) setAttrIfChanged(h, A_TKO, '1'); else if (ha(h, A_TKO)) ra(h, A_TKO); }
   };
 
-  let latestPrimaryModelInfo = null, lastSyncedAwaitingDecision = null, lastSyncedHasError = false;
-  const detectVisibleDecisionTakeover = (m = null) => { for (const el of qa(D, TK_SEL)) if (!cl(el, S_SUB) && !isHidEl(el, false, m)) return true; return false; };
+  const S_CV = '[data-testid="conversation-view"]', S_CC = '.surface-composer-card';
+  let activePaneCard = null, activeConvView = null, lastNotifiedPaneCard = null, lastNotifiedConvView = null;
+  const lastModelByCard = new WeakMap();
+  const isLiveMainCard = (c) => !!(c && c[K_IC] !== false && !cl(c, S_SUB) && !c.hidden && c.style?.display !== 'none');
+  const isLiveMainConv = (v) => !!(v && v[K_IC] !== false && !cl(v, S_SUB) && !v.hidden && v.style?.display !== 'none' && !cl(v, '.agy-home') && !qs(v, '.agy-home'));
+  const findCardForTarget = (t) => {
+    if (!t?.closest) return null;
+    for (const [sel, q] of [[S_CC, 0], [S_IB, S_CC], [S_CV, `${S_IB} ${S_CC},${S_CC}`], ['[data-tiling-pane]', `${S_IB} ${S_CC}`]]) {
+      const h = cl(t, sel);
+      if (!h || (sel === S_CV && cl(h, S_SUB))) continue;
+      const c = q ? qs(h, q) : h;
+      if (isLiveMainCard(c)) return c;
+    }
+    return null;
+  };
+  const findConvForTarget = (t, fb = null) => {
+    const cv = (t?.closest && cl(t, S_CV)) || (fb?.closest && cl(fb, S_CV)) || (t?.closest && qs(cl(t, '[data-tiling-pane]'), S_CV)) || null;
+    return isLiveMainConv(cv) ? cv : null;
+  };
+  const notifyActivePaneModules = (card, cv, force = false) => {
+    const nc = isLiveMainCard(card) ? card : null, nv = isLiveMainConv(cv) ? cv : findConvForTarget(nc, nc);
+    if (!force && nc === lastNotifiedPaneCard && nv === lastNotifiedConvView) return;
+    lastNotifiedPaneCard = nc; lastNotifiedConvView = nv;
+    const anc = nv || nc;
+    if (nv) try { convAuraCtl.setActiveView?.(nv); } catch {}
+    if (anc) {
+      let bar = null;
+      try { const tel = W.__agPrismTelemetry; bar = tel?.setActiveBar?.(anc) || tel?.getBarForView?.(anc) || null; } catch {}
+      try { (pulseBridgeInst || W.__agCsPulseBridgeInst)?.setActiveHost?.(bar || anc); } catch {}
+    }
+  };
+  const trackActivePaneFromTarget = (t, sched = true) => {
+    if (destroyed || !t?.closest || cl(t, '#' + SETTINGS_SEC_ID + ',#ag-prism-periodic-picker-root,[role="dialog"]')) return false;
+    const nc = findCardForTarget(t), nv = findConvForTarget(t, nc);
+    if (!nc && !nv) return false;
+    const chg = (nc && nc !== activePaneCard) || (nv && nv !== activeConvView);
+    if (nc) activePaneCard = nc;
+    if (nv) activeConvView = nv;
+    if (chg) {
+      notifyActivePaneModules(activePaneCard, activeConvView);
+      if (sched) { dirtyFlags.c = true; scheduleSync(); }
+      return true;
+    }
+    return false;
+  };
+  const resolveActivePrimaryCard = (cards) => {
+    if (!cards?.length) { activePaneCard = null; if (activeConvView && !isLiveMainConv(activeConvView)) activeConvView = null; return null; }
+    if (activePaneCard && cards.includes(activePaneCard) && isLiveMainCard(activePaneCard)) return activePaneCard;
+    const ac = findCardForTarget(D.activeElement);
+    const pick = (ac && cards.includes(ac) ? ac : null) || cards.find((c) => !cl(c, S_SUB)) || cards[0] || null;
+    activePaneCard = pick && !cl(pick, S_SUB) ? pick : null;
+    const cv = findConvForTarget(activePaneCard, activePaneCard);
+    if (cv) activeConvView = cv; else if (activeConvView && !isLiveMainConv(activeConvView)) activeConvView = null;
+    return pick;
+  };
+
+  let latestPrimaryModelInfo = null, latestPaneModelMap = new Map(), lastSyncedAwaitingDecision = null, lastSyncedHasError = false;
+  const detectVisibleDecisionTakeover = (m = null, sc = null) => {
+    if (sc && isLiveMainConv(sc)) {
+      for (const el of qa(sc, TK_SEL)) if (!cl(el, S_SUB) && !isHidEl(el, false, m)) return true;
+      if (qa(D, S_CV).length > 1) return false;
+    }
+    for (const el of qa(D, TK_SEL)) {
+      if (cl(el, S_SUB) || (sc && cl(el, S_CV) && cl(el, S_CV) !== sc)) continue;
+      if (!isHidEl(el, false, m)) return true;
+    }
+    return false;
+  };
   const measureCrabClearanceAll = () => {
-    const cards = AF(qa(D, '[data-testid="agent-input-box"] .surface-composer-card')), pri = cards.find((c) => !cl(c, S_SUB)) || cards[0] || null;
+    const cards = AF(qa(D, `${S_IB} ${S_CC}`)), pri = resolveActivePrimaryCard(cards), priCv = findConvForTarget(pri, pri);
     const mOn = isMascotEnabled(), m = new Map(), pTk = new Set(), byCard = new Map();
     for (const c of pri ? [pri, ...cards.filter((x) => x !== pri)] : cards) {
       const ip = c === pri;
       byCard.set(c, measureCardClr(c, cl(c, S_IB), ip && mOn, ip, m, pTk));
     }
-    return { cards, primaryCard: pri, byCard, awaitingDecision: detectVisibleDecisionTakeover(m) };
+    return { cards, primaryCard: pri, primaryConv: priCv, byCard, awaitingDecision: detectVisibleDecisionTakeover(m, priCv) };
   };
   const syncConvAuraSemantics = (activeInfo, preAwaiting) => {
     if (!isFn(convAuraCtl.setSemanticState)) return;
@@ -1250,14 +1376,16 @@
   };
 
   function syncComposers(measured, skipSparks = false) {
-    const cPlan = measured?.cPlan || measureCrabClearanceAll(), { cards, primaryCard } = cPlan, ui = uiText(getLang()), mascotOn = isMascotEnabled(), hs = streamChoreoCtl.heroState;
+    const cPlan = measured?.cPlan || measureCrabClearanceAll(), { cards, primaryCard, primaryConv } = cPlan, ui = uiText(getLang()), mascotOn = isMascotEnabled(), hs = streamChoreoCtl.heroState;
     if (!measured) syncModelMenuRootAttrs(qs(D, MODEL_PANEL_SEL));
     if (!primaryCard || cl(primaryCard, S_SUB)) { const h = de(); if (ha(h, A_TKO)) ra(h, A_TKO); }
+    const inHomeCtx = Boolean(qs(D, '.agy-home')), basePathCtx = (inHomeCtx ? 'H:' : 'C:') + (W.location?.pathname || ''), paneModelMap = new Map();
     let primaryModelInfo = null;
     for (const card of cards) {
-      const inputBox = cl(card, S_IB), zLayer = cl(inputBox, '.z-10'), isPrimary = card === primaryCard;
+      const inputBox = cl(card, S_IB), zLayer = cl(inputBox, '.z-10'), isPrimary = card === primaryCard, inSubCard = Boolean(cl(card, S_SUB));
       if (zLayer) setAttrIfChanged(zLayer, 'data-ag-cs-input-layer', '1');
-      if (isPrimary && cfg.composerRestyle !== false) {
+      const wantPrismBox = !inSubCard && cfg.composerRestyle !== false && !card.hidden && card.style?.display !== 'none';
+      if (wantPrismBox) {
         if (ga(card, A_PB) !== '1') prismRimCtl.markDirty();
         setAttrIfChanged(card, A_PB, '1');
       } else if (ha(card, A_PB)) {
@@ -1270,31 +1398,47 @@
         else if (ha(p, 'data-ag-cs-placeholder')) ra(p, 'data-ag-cs-placeholder');
       }
       const modelBtn = qs(card, '[data-testid="model-selector-trigger"]'), mInfo = modelGlyphCtl.syncModelGlyphOnButton(modelBtn);
-      if (isPrimary && mInfo) {
-        primaryModelInfo = mInfo;
+      if (mInfo && !inSubCard) {
+        if (isPrimary) primaryModelInfo = mInfo;
+        const cardCv = cl(card, S_CV), cardPane = cl(card, '[data-tiling-pane]'), paneBrand = mInfo.brand || 'gemini';
+        if (cardCv) { setAttrIfChanged(cardCv, 'data-ag-cs-pane-camp', paneBrand); paneModelMap.set(cardCv, mInfo); }
+        if (cardPane) setAttrIfChanged(cardPane, 'data-ag-cs-pane-camp', paneBrand);
         const cleanLbl = modelGlyphCtl.readButtonLabelWithoutGlyph(modelBtn);
         if (cleanLbl) {
           const normLbl = modelGlyphCtl.normalizeModelEffortLabel ? modelGlyphCtl.normalizeModelEffortLabel(cleanLbl) : cleanLbl, modelSig = `${mInfo.brand}:${normLbl.toLowerCase()}`;
-          const c = (qs(D, '.agy-home') ? 'H:' : 'C:') + (W.location?.pathname || ''), dd = ga(modelBtn, 'data-disabled');
-          if (hs.lastModelSig === null || hs.lastModelCard !== card || hs.lastModelCtx !== c) {
-            hs.lastModelSig = modelSig; hs.lastModelCtx = c; hs.lastModelCard = card;
-          } else if (modelSig !== hs.lastModelSig) {
-            hs.lastModelSig = modelSig;
+          const cardCid = ga(cardCv, 'data-cascade-id') || ga(cl(card, '[data-cascade-id]'), 'data-cascade-id') || '';
+          const cardCtx = basePathCtx + (cardCid ? '#' + cardCid : '');
+          const dd = ga(modelBtn, 'data-disabled');
+          const prev = lastModelByCard.get(card);
+          if (!prev || prev.ctx !== cardCtx) {
+            lastModelByCard.set(card, { sig: modelSig, ctx: cardCtx });
+          } else if (modelSig !== prev.sig) {
+            lastModelByCard.set(card, { sig: modelSig, ctx: cardCtx });
             if (!(modelBtn.disabled || ha(modelBtn, 'disabled') || ga(modelBtn, 'aria-disabled') === 'true' || (dd != null && dd !== 'false'))) {
-              hs.pendingModelShiftNotify = true;
+              if (isPrimary) hs.pendingModelShiftNotify = true;
               if (isMotionUltra()) streamChoreoCtl.triggerHeroDFiberPulse(card, modelBtn, mInfo.brand);
             }
+          }
+          if (isPrimary) {
+            hs.lastModelSig = modelSig;
+            hs.lastModelCtx = cardCtx;
+            hs.lastModelCard = card;
           }
         }
       }
     }
     syncQueuedPrismBoxes();
     latestPrimaryModelInfo = primaryModelInfo;
+    latestPaneModelMap = paneModelMap;
+    if (primaryCard || primaryConv) notifyActivePaneModules(primaryCard, primaryConv);
     const priPlan = primaryCard ? cPlan.byCard.get(primaryCard) : null;
+    const pulseOpen = readOpenPulseCardState();
+    const pulseCoversPri = Boolean(pulseOpen.openNow && (!pulseOpen.openHost || !primaryConv || primaryConv.contains?.(pulseOpen.openHost) || primaryCard?.contains?.(pulseOpen.openHost)));
     const mascotShouldPeek = Boolean(
       cPlan.awaitingDecision ||
       priPlan?.mo ||
       priPlan?.ops?.some(([, , on]) => on) ||
+      pulseCoversPri ||
       ha(de(), 'data-ag-cs-model-menu') ||
       ga(de(), 'data-ag-pp-open') === '1' ||
       qs(D, MODEL_PANEL_SEL)
@@ -1308,7 +1452,7 @@
       notifyMascot('model-shift');
     }
     modelGlyphCtl.syncModelSelectorPanel(primaryModelInfo);
-    if (!skipSparks) streamChoreoCtl.syncThinkingSparks(primaryModelInfo);
+    if (!skipSparks) streamChoreoCtl.syncThinkingSparks(primaryModelInfo, paneModelMap);
     if (measured && 'caretList' in measured) {
       smoothCaretCtl.applyMutations(measured.caretList, false);
     } else {
@@ -1554,33 +1698,44 @@
   const calibratedPulseFooters = new WeakSet();
   const pulseHealTimers = new Set();
 
+  const PULSE_HOST_SEL = '#ag-prism-pulse-bar,#ag-pulse-status-bar,[data-ag-prism-pulse-bar],[data-ag-prism-fallback="1"],[data-ag-pulse-bar="true"]';
+  const collectPulseHosts = () => {
+    const out = [], seen = new Set(), add = (n) => { if (n && !seen.has(n)) { seen.add(n); out.push(n); } };
+    try { for (const b of W.__agPrismTelemetry?.getBars?.() || []) add(b); } catch {}
+    for (const n of qa(D, PULSE_HOST_SEL)) add(n);
+    add(byId('ag-prism-pulse-bar')); add(byId('ag-pulse-status-bar'));
+    return out;
+  };
   const healBlockedExternalPulseBar = () => {
     if (destroyed) return;
-    const bar = byId('ag-pulse-status-bar');
-    if (!bar || ga(bar, 'data-ag-prism-fallback') === '1' || ga(bar, 'data-layout') !== 'blocked') return;
-    const footer = bar[K_PE];
-    if (!footer || !clHas(footer, 'agy-composer-footer') || calibratedPulseFooters.has(footer)) return;
-    if ((rc(footer)?.width || 0) < 420) return;
-    calibratedPulseFooters.add(footer);
-    const prevRole = ga(footer, 'role');
-    sa(footer, 'role', 'banner');
-    W.dispatchEvent?.(new Event('resize'));
-    const t = ST(() => {
-      pulseHealTimers.delete(t);
-      if (destroyed) return;
-      if (prevRole) sa(footer, 'role', prevRole);
-      else ra(footer, 'role');
-      W.dispatchEvent?.(new Event('resize'));
-    }, 220);
-    pulseHealTimers.add(t);
+    const list = [...qa(D, '#ag-pulse-status-bar,[data-ag-pulse-bar="true"]')], p0 = byId('ag-pulse-status-bar');
+    if (p0 && !list.includes(p0)) list.unshift(p0);
+    for (const bar of list) {
+      if (!bar || ga(bar, 'data-ag-prism-fallback') === '1' || ga(bar, 'data-layout') !== 'blocked') continue;
+      const ft = bar[K_PE];
+      if (!ft || !clHas(ft, 'agy-composer-footer') || calibratedPulseFooters.has(ft) || (rc(ft)?.width || 0) < 420) continue;
+      calibratedPulseFooters.add(ft);
+      const pr = ga(ft, 'role'); sa(ft, 'role', 'banner'); W.dispatchEvent?.(new Event('resize'));
+      const t = ST(() => { pulseHealTimers.delete(t); if (destroyed) return; pr ? sa(ft, 'role', pr) : ra(ft, 'role'); W.dispatchEvent?.(new Event('resize')); }, 220);
+      pulseHealTimers.add(t);
+    }
   };
-
+  const readOpenPulseCardState = () => {
+    const vis = (c, host) => !!(c && (c[K_IC] !== false || host?.[K_IC] === true) && !c.hidden && ga(c, 'aria-hidden') !== 'true' && c.style?.display !== 'none');
+    let openNow = vis(byId('context-card'), null), openHost = null;
+    for (const h of collectPulseHosts()) if (vis(h?.shadowRoot?.getElementById?.('context-card'), h)) { openNow = true; openHost = h; break; }
+    return { openNow, openHost };
+  };
   const syncContextCardOpenNotify = () => {
-    const pulseHost = byId('ag-prism-pulse-bar') || byId('ag-pulse-status-bar');
-    const cardEl = byId('context-card') || pulseHost?.shadowRoot?.getElementById?.('context-card') || null;
-    const openNow = !!(cardEl && cardEl[K_IC] !== false && !cardEl.hidden && ga(cardEl, 'aria-hidden') !== 'true' && cardEl.style?.display !== 'none');
+    const { openNow, openHost } = readOpenPulseCardState();
+    if (openHost) {
+      try { W.__agPrismTelemetry?.setActiveBar?.(openHost); } catch {}
+      try { (pulseBridgeInst || W.__agCsPulseBridgeInst)?.setActiveHost?.(openHost); } catch {}
+    }
+    const changed = openNow !== wasContextCardOpen;
     if (openNow && !wasContextCardOpen) notifyMascot('vial-opened');
     wasContextCardOpen = openNow;
+    if (changed && !destroyed) { dirtyFlags.c = true; scheduleSync(); }
   };
 
   function ensurePulseBridge(forceSync = false) {
@@ -1619,7 +1774,7 @@
   };
 
   const OWN_PLUGIN_SELECTOR =
-    '.ag-cs-home-panel-seat, .ag-cs-ripple-host, .ag-cs-conv-aura-host, .ag-cs-crab, .ag-cs-prism-rim-cv, .ag-cs-model-glyph, [data-testid="orchestrator-effort-bar"], .ag-cs-thinking-spark, .ag-cs-smooth-caret, .ag-cs-liftoff-veil, .ag-cs-sidebar-glide-pill, .ag-cs-pill-glide, .ag-cs-stream-chunk, .ag-cs-thought-chunk, .ag-anim-icon, .ag-prism-omni-menu, .ag-prism-omni-pane, .ag-cs-ctx-menu, .ag-cs-ctx-toast, [data-ag-prism-omni-owned="1"], [data-ag-prism-sidebar-owned="1"], .ces-ag-section, .ces-set, #ag-codex-effort-slider-styles, #ag-pulse-status-bar, #context-card, #' +
+    '.ag-cs-home-panel-seat, .ag-cs-ripple-host, .ag-cs-conv-aura-host, .ag-cs-crab, .ag-cs-prism-rim-cv, .ag-cs-model-glyph, [data-testid="orchestrator-effort-bar"], .ag-cs-thinking-spark, .ag-cs-smooth-caret, .ag-cs-liftoff-veil, .ag-cs-sidebar-glide-pill, .ag-cs-pill-glide, .ag-cs-stream-chunk, .ag-cs-thought-chunk, .ag-anim-icon, .ag-prism-omni-menu, .ag-prism-omni-pane, .ag-cs-ctx-menu, .ag-cs-ctx-toast, [data-ag-prism-omni-owned="1"], [data-ag-prism-sidebar-owned="1"], .ces-ag-section, .ces-set, #ag-codex-effort-slider-styles, #ag-pulse-status-bar, [data-ag-prism-pulse-bar], [data-ag-prism-fallback="1"], #context-card, #' +
     SETTINGS_SEC_ID +
     ', #ag-prism-css, #ag-prism-omni-css, #ag-prism-sidebar-studio-css, #ag-prism-periodic-picker-root, #ag-prism-periodic-picker-css, .ag-pp-hold-ring, .ag-pp-mini-keycap, #ag-claude-style-css, #ag-prism-motion-off-css, #ag-prism-host-alert-css, ' +
     EXT_ZH_UI_SEL;
@@ -1763,7 +1918,7 @@
       );
       if (roleHit && split.contains?.(roleHit)) return true;
     }
-    return !!(cl(el, '[data-testid="bottom-terminal-panel-resize-handle"]'));
+    return !!(cl(el, '[data-testid="bottom-terminal-panel-resize-handle"], [data-testid="tiling-splitter"]'));
   };
   const AX_H = /(?:^|[;\s])(?:width\s*:\s*0(?:\s|;|px|%|!|$)|display\s*:\s*none|position\s*:\s*absolute)/i;
   const axV = (e) => !!(e && tagU(e) === 'DIV' && !e.hidden && !ha(e, 'hidden') && ga(e, 'aria-hidden') !== 'true' && ga(e, 'data-split-overlaid') !== 'true' && e.style?.display !== 'none' && e.style?.position !== 'absolute' && e.style?.width !== '0' && e.style?.width !== '0px' && !AX_H.test(ga(e, 'style') || ''));
@@ -1905,6 +2060,9 @@
         tid === 'model-selector-panel' ||
         el.id === 'ag-pulse-status-bar' ||
         el.id === 'ag-prism-pulse-bar' ||
+        ha(el, 'data-ag-prism-pulse-bar') ||
+        ga(el, 'data-ag-prism-fallback') === '1' ||
+        ga(el, 'data-ag-pulse-bar') === 'true' ||
         el.id === 'context-card' ||
         ancMdl ||
         q(MODEL_PANEL_SEL + ', #context-card');
@@ -1991,9 +2149,14 @@
 
   const measureSyncPhase = (flags, isFullSync = false) => {
     const inHome = !!(qs(D, '.agy-home')), inHero = inHome && !!(qs(D, '.agy-home [data-testid="home-greeting"]'));
-    const formalConv = !inHome ? streamChoreoCtl.findFormalConvView() : null;
+    const formalConv = !inHome ? (isLiveMainConv(activeConvView) ? activeConvView : streamChoreoCtl.findFormalConvView()) : null;
     const curCascadeId = formalConv ? ga(formalConv, 'data-cascade-id') || resolveCascadeId(null) || '' : '';
-    const isConvSwap = !!(formalConv && ((lastFormalConvEl && formalConv !== lastFormalConvEl) || (curCascadeId && lastFormalCascadeId && curCascadeId !== lastFormalCascadeId)));
+    const prevDetached = Boolean(lastFormalConvEl && lastFormalConvEl[K_IC] === false);
+    const isConvSwap = !!(
+      formalConv &&
+      ((lastFormalConvEl && formalConv !== lastFormalConvEl && prevDetached) ||
+        (curCascadeId && lastFormalCascadeId && curCascadeId !== lastFormalCascadeId && (!lastFormalConvEl || formalConv === lastFormalConvEl || prevDetached)))
+    );
     const isAsyncConvEntry = !isFullSync && !inHome && !!formalConv && (!streamChoreoCtl.heroState.wasInFormalConv || isConvSwap);
     const homeComposerSampled = inHome && (flags.f || flags.r || flags.c) ? (streamChoreoCtl.sampleHomeComposerRect(), true) : false;
     const hs = streamChoreoCtl.heroState;
@@ -2114,6 +2277,9 @@
         syncAuxSplit();
       }
 
+      if (cfg.homeLayout === 'studio' && (measured.inHero || measured.inHome) && !getHomeStudioMod()) {
+        requestHomeStudioChannelIfNeeded();
+      }
       if (flags.f || flags.r || measured.inHero !== homeStudioCtl.wasHero()) {
         homeStudioCtl.syncGreeting(measured.inHero);
         if (cfg.homeLayout !== 'studio') {
@@ -2130,10 +2296,10 @@
       }
 
       if (flags.f || flags.r || flags.t) {
-        rippleCtl.sync();
+        try { rippleCtl.sync(); } catch {}
       }
       if (flags.f || flags.r || flags.c || flags.t) {
-        convAuraCtl.sync(true);
+        try { convAuraCtl.sync(true); } catch {}
       }
       const modelPanelNow = measured.modelPanelNow;
       const modelOverlayChanged = measured.modelOverlayChanged;
@@ -2144,7 +2310,7 @@
       if (flags.f || flags.c || modelOverlayChanged) {
         syncComposers(measured, deferHeavyConvWork);
       } else if (!deferHeavyConvWork && flags.tk) {
-        streamChoreoCtl.syncThinkingSparks(latestPrimaryModelInfo);
+        streamChoreoCtl.syncThinkingSparks(latestPrimaryModelInfo, latestPaneModelMap);
       }
       if (flags.f || flags.r || flags.s || flags.c) {
         streamChoreoCtl.syncHeroRouteChoreography(measured);
@@ -2189,7 +2355,7 @@
             runGuardedMut(() => {
               stampBgCmdWrap(convNow);
               syncBleedTables();
-              streamChoreoCtl.syncThinkingSparks(latestPrimaryModelInfo);
+              streamChoreoCtl.syncThinkingSparks(latestPrimaryModelInfo, latestPaneModelMap);
               streamChoreoCtl.syncDualStreamEngine();
               streamChoreoCtl.syncHeroCCaustics();
             });
@@ -2425,8 +2591,9 @@
       if (ev.key === 'Enter' && !ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.isComposing && ev.keyCode !== 229 && cl(ev.target, `${S_IB} [contenteditable="true"]`)) {
         const sm = qs(D, '[data-testid="slash-command-menu"]');
         if (sm && (!sm.getClientRects || sm.getClientRects().length > 0)) return;
+        trackActivePaneFromTarget(ev.target, false);
         if (cl(ev.target, '.agy-home')) streamChoreoCtl.triggerHomeLiftoffRippleBurst();
-        convAuraCtl.triggerStart();
+        convAuraCtl.triggerStart(findConvForTarget(ev.target));
         dispatchComposerSubmit(ev.target);
         return;
       }
@@ -2438,11 +2605,18 @@
     } catch {}
   };
 
+  const isPulseHostNode = (n) => !!(n && (n.id === 'ag-prism-pulse-bar' || n.id === 'ag-pulse-status-bar' || ha(n, 'data-ag-prism-pulse-bar') || ga(n, 'data-ag-prism-fallback') === '1' || ga(n, 'data-ag-pulse-bar') === 'true'));
+
   const onWinClick = (ev) => {
     try {
       if (destroyed || !ev?.target?.closest || isThoughtIsolatedNode(ev.target)) return;
-      const t = ev.target, isPulse = (n) => n?.id === 'ag-prism-pulse-bar' || n?.id === 'ag-pulse-status-bar';
-      if (isPulse(t) || cl(t, '#ag-prism-pulse-bar,#ag-pulse-status-bar') || (isFn(ev.composedPath) && ev.composedPath().some(isPulse))) {
+      const t = ev.target;
+      const hitPulse = isPulseHostNode(t) ? t : cl(t, PULSE_HOST_SEL) || (isFn(ev.composedPath) ? ev.composedPath().find(isPulseHostNode) : null);
+      if (hitPulse) {
+        try { W.__agPrismTelemetry?.setActiveBar?.(hitPulse); } catch {}
+        try { (pulseBridgeInst || W.__agCsPulseBridgeInst)?.setActiveHost?.(hitPulse); } catch {}
+        ST(() => { if (!destroyed) syncContextCardOpenNotify(); }, 28);
+      } else if (wasContextCardOpen) {
         ST(() => { if (!destroyed) syncContextCardOpenNotify(); }, 28);
       }
       if (cl(t, '[data-testid="thinking-collapsible-trigger"]') && getThoughtTranslateMode() !== 'off') {
@@ -2450,9 +2624,10 @@
       }
       const sendBtn = cl(t, '[data-testid="input-send-button"], [data-testid="send-button"]');
       if (sendBtn && !sendBtn.disabled) {
+        trackActivePaneFromTarget(sendBtn, false);
         if (cl(sendBtn, '.agy-home')) streamChoreoCtl.triggerHomeLiftoffRippleBurst();
         if (ga(sendBtn, A_IC) === 'arrow-up-launch' && isMotionStandardOrUltra()) { try { motionEngine?.triggerIcon?.(sendBtn, 'launch'); } catch {} }
-        convAuraCtl.triggerStart();
+        convAuraCtl.triggerStart(findConvForTarget(sendBtn));
         dispatchComposerSubmit(sendBtn);
       }
       const copyBtn = cl(t, `[${A_IC}="copy-check"]`) || cl(t, 'pre button, button[aria-label*="Copy" i], button[aria-label*="复制"]');
@@ -2474,11 +2649,19 @@
     } catch {}
   };
 
+  const onWinFocusIn = (ev) => {
+    try {
+      if (destroyed) return;
+      trackActivePaneFromTarget(ev?.target, true);
+    } catch {}
+  };
+
   const onDocPointerDown = (ev) => {
     try {
       wakeWinBlur();
       const t = ev?.target;
       if (t?.closest) {
+        trackActivePaneFromTarget(t, true);
         const sbRow = cl(t, '[data-testid="conversation-row-sidebar"]');
         if (sbRow) streamChoreoCtl.lockSidebarRowRunningOnPointerDown?.(sbRow);
         if (isSplitResizeHandle(t)) {
@@ -2511,6 +2694,7 @@
   const onDocCaretEvent = (ev) => {
     try {
       const type = ev?.type || '';
+      if (type === 'focusin') trackActivePaneFromTarget(ev?.target, true);
       if ((type === 'keydown' || type === 'keyup') && ev?.key && MODIFIER_ONLY_KEYS.has(ev.key)) return;
       if (type === 'scroll' || type === 'selectionchange' || type === 'keydown' || type === 'keyup') {
         const ae = D.activeElement;
@@ -2574,10 +2758,12 @@
               dirtyFlags.c = anyRelevant = true;
               continue;
             }
+            if (/^data-(?:ag-prism-wallpaper|has-(?:drawer-)?browser-hole)$/.test(m.attributeName)) { dirtyFlags.r = anyRelevant = true; continue; }
             if (m.attributeName === 'data-ag-prism-mode') dirtyFlags.c = true;
             dirtyFlags.t = anyRelevant = true;
             continue;
           }
+          if (/^data-has-(?:drawer-)?browser-hole$/.test(m.attributeName)) { dirtyFlags.r = anyRelevant = true; continue; }
           if (tidOf(tgt?.[K_PE]) === 'aux-pane-split') {
             let dualChanged = false;
             runGuardedMut(() => { dualChanged = axU(tgt[K_PE]); });
@@ -2701,6 +2887,7 @@
     ['pointermove', onWinPointerMove, CAP_PASSIVE],
     ['pointerup', onWinPointerUp, { passive: true }],
     ['pointercancel', onWinPointerUp, { passive: true }],
+    ['focusin', onWinFocusIn, CAP_PASSIVE],
     ['resize', onWinResize, { passive: true }],
     ['keydown', onWinKeyDown, true],
     ['click', onWinClick, true],
@@ -2714,6 +2901,8 @@
   const teardownCore = () => {
     if (coreTornDown) return;
     coreTornDown = destroyed = true;
+    activePaneCard = activeConvView = lastNotifiedPaneCard = lastNotifiedConvView = null;
+    latestPaneModelMap.clear();
     const safe = (fn) => { try { fn?.(); } catch {} };
     cancelScheduledSync();
     streamChoreoCtl.clearTransientTimers();
@@ -2763,7 +2952,10 @@
       if (destroyed || D.hidden) return;
       const expectedThemeKey = `${getEffectivePalette()}|${getLightPreset()}|${isDarkTheme() ? 'd' : 'l'}|${getAccentTone()}|${getAmbientIntensitySetting()}|${getCornerStyle()}`;
       if (expectedThemeKey !== lastThemeKey || !ha(de(), 'data-ag-prism')) applyRootAttrs();
-      if (homeStudioCtl.wasHero() && cfg.homeLayout === 'studio') homeStudioCtl.scheduleUsageRollupRefresh(1800);
+      if (cfg.homeLayout === 'studio') {
+        if (homeStudioCtl.wasHero()) homeStudioCtl.scheduleUsageRollupRefresh(1800);
+        else if (!getHomeStudioMod() && qs(D, '.agy-home')) requestHomeStudioChannelIfNeeded();
+      }
     }, nextMs);
   };
 
@@ -2777,7 +2969,7 @@
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['class', 'hidden', 'aria-expanded', 'data-state', 'data-ag-queued-act', 'data-selected', 'data-cascade-id', 'data-ag-prism-host-i18n', 'data-ag-prism-mode', 'data-ag-pp-open'],
+      attributeFilter: ['class', 'hidden', 'aria-expanded', 'data-state', 'data-ag-queued-act', 'data-selected', 'data-cascade-id', 'data-ag-prism-host-i18n', 'data-ag-prism-mode', 'data-ag-pp-open', 'data-ag-prism-wallpaper', 'data-has-browser-hole', 'data-has-drawer-browser-hole'],
     });
     for (const [evName, handler, opts] of DOC_LISTENERS) D.addEventListener(evName, handler, opts);
     syncCaretListeners(cfg.smoothCaret !== false);
@@ -2832,6 +3024,16 @@
         runSync(true);
       }
     },
+    syncHomeStudio() {
+      if (destroyed) return;
+      resolveHomeStudioCtl();
+      if (!lifecycleStarted) return;
+      markAllDirty();
+      runSync(true);
+    },
+    detachHomeStudio() {
+      disposeActiveHomeStudio();
+    },
     syncAbsorbed: () => syncAbsorbedModules(true),
     getState() {
       const convAura = convAuraCtl.getInstance();
@@ -2846,7 +3048,7 @@
         hasThoughtModule: !!W.__agPrismThought, hasOmniModule: !!W.__agPrismOmni, hasSidebarStudio: !!W.__agPrismSidebar,
         hasContextMenu: !!(W.__agPrismContextMenu || GT.__agPrismContextMenu), hasHostEnhancer: isFn(hostEnhancerCtl?.getDebugState),
         usageRecordsCount: homeStudioCtl.getUsageRecordsCount(), hasPanel: homeStudioCtl.hasConnectedPanel(),
-        hasRipple: !!rippleMount?.canvas?.isConnected, rippleSleeping: !rippleMount || !!rippleMount.sleeping,
+        hasRipple: !!rippleMount?.canvas?.isConnected, rippleMode: rippleMount?.canvas?.isConnected ? (rippleMount.mode || 'home') : 'off', rippleSleeping: !rippleMount || !!rippleMount.sleeping,
         rippleAura: rippleMount ? { ...rippleMount.aura } : null, hasConvAura: auraConnected, convAuraPhase,
         convAuraSleeping: !convAura || !!convAura.sleeping, convAuraDrawCount: convAura ? convAura.drawCount : 0,
         convAuraCanvasSize: convAura ? { width: convAura.width, height: convAura.height } : null,
@@ -2864,22 +3066,22 @@
       for (const k of ['__agPrismTelemetry', '__agPrismEffortSlider', '__agPrismThought', '__agPrismOmni', '__agPrismSidebar', '__agPrismPeriodicPicker', '__agPrismHostI18n', '__agPrismWallpaper', '__agPrismSuggester']) try { (W[k] || GT[k])?.destroy?.(); } catch {}
       try { W.__agPrismInlineDiff?.unbindHooks?.(); } catch {}
       try { (ownedCtxMenu || W.__agPrismContextMenu || GT.__agPrismContextMenu)?.destroy?.(); } catch {}
-      const sc = streamChoreoCtl, hs = homeStudioCtl;
-      for (const [o, k] of [[sc, 'cancelDeferredHydration'], [hs, 'flushUsageCacheNow'], [sc, 'flushAllStreamArtifacts'], [0, restoreAllHostAnimatedIcons], [smoothCaretCtl, 'teardown'], [prismRimCtl, 'teardown'], [rippleCtl, 'unmount'], [convAuraCtl, 'unmount'], [sc, 'clearWorkedForAutoUnfoldAttrs'], [hs, 'unmountPanelSeat'], [0, unmountCrab], [hs, 'restoreGreetings'], [0, restoreHostTurbo]]) try { o ? o[k]() : k(); } catch {}
+      const sc = streamChoreoCtl;
+      for (const [o, k] of [[sc, 'cancelDeferredHydration'], [0, disposeActiveHomeStudio], [sc, 'flushAllStreamArtifacts'], [0, restoreAllHostAnimatedIcons], [smoothCaretCtl, 'teardown'], [prismRimCtl, 'teardown'], [rippleCtl, 'unmount'], [convAuraCtl, 'unmount'], [sc, 'clearWorkedForAutoUnfoldAttrs'], [0, unmountCrab], [0, restoreHostTurbo]]) try { o ? o[k]() : k(); } catch {}
       qa(D, `[${A_PB}]`).forEach((e) => { ra(e, A_PB); rp(e, '--ag-px'); rp(e, '--ag-py'); });
       qa(D, '[data-ag-cs-effort]').forEach((e) => { ra(e, 'data-ag-cs-effort'); e[K_CL].remove('ag-cs-effort-badge'); });
       qa(D, `[${A_Q}],[${A_TK}]`).forEach((e) => { ra(e, A_Q); ra(e, A_TK); rp(e, 'margin-bottom'); });
       qa(D, '[data-ag-row-stagger]').forEach((e) => { ra(e, 'data-ag-row-stagger'); rp(e, '--ag-row-i'); });
       qa(D, '.agy-overlay,.agy-fastpick,[data-testid="context-menu-popup"],[data-testid="context-menu-submenu-popup"],[data-ag-cs-overview-shell]').forEach((e) => { rp(e, '--ag-origin-x'); rp(e, '--ag-origin-y'); });
-      for (const s of 'placeholder|orch-active|model-overlay|aux-dual|overview-shell|prism-mirror|prism-reflect|settings-dlg|settings-nav|nav-active|conv-seat|vp-wrap|home-sheet|row-running|menu-open|auto-unfolded|outer-open|caustic|fiber-camp|sonar|stage-glide|liftoff-bubble|thought-streaming|spark-streaming|prism-cv|code-folded|bg-cmd-wrap|input-layer|hdr-open|rich-pre|glide-item|crab-anchor|bleed'.split('|')) {
+      for (const s of 'placeholder|orch-active|model-overlay|aux-dual|overview-shell|prism-mirror|prism-reflect|settings-dlg|settings-nav|nav-active|conv-seat|conv-ripple-host|vp-wrap|home-sheet|row-running|menu-open|auto-unfolded|outer-open|caustic|fiber-camp|pane-camp|sonar|stage-glide|liftoff-bubble|thought-streaming|spark-streaming|prism-cv|code-folded|bg-cmd-wrap|input-layer|hdr-open|rich-pre|glide-item|crab-anchor|bleed'.split('|')) {
         const a = 'data-ag-cs-' + s;
         qa(D, `[${a}]`).forEach((e) => ra(e, a));
       }
       for (const a of ['data-has-sep', 'data-pv-warn', 'data-ag-sp-running']) qa(D, `[${a}]`).forEach((e) => ra(e, a));
-      qa(D, '#ag-prism-settings-v101-css,#ag-prism-omni-css,#ag-prism-motion-off-css,#ag-prism-periodic-picker-css,#ag-prism-periodic-picker-root,.ag-pp-hold-ring,.ag-pp-mini-keycap,#ag-prism-wallpaper-root,#ag-prism-wallpaper-css,#ag-prism-suggester-css,.ag-omni-dock,.ag-omni-menu,.ag-prism-omni-menu,.ag-prism-omni-pane,.ag-cs-ctx-menu,.ag-cs-ctx-toast,.ag-cs-sb-more-wrap,[data-ag-prism-omni-owned="1"],.ag-cs-liftoff-veil,.ag-cs-sidebar-glide-pill,.ag-cs-pill-glide,.ag-cs-conv-aura-host,.ag-cs-conv-glow,.ag-cs-prism-rim-cv,.ag-cs-code-fold-btn,.ag-cs-nav-outline-popover,.ag-cs-model-glyph,.ag-cs-panel-row-glyph,[data-testid="orchestrator-effort-bar"],.ag-cs-thinking-spark,.ag-cs-orbital-backdrop,.ag-cs-perf-backdrop,.ag-v2-habitat-prop,#' + SETTINGS_SEC_ID).forEach((e) => e.remove());
+      qa(D, '#ag-prism-settings-v101-css,#ag-prism-studio-v101-css,#ag-prism-omni-css,#ag-prism-motion-off-css,#ag-prism-periodic-picker-css,#ag-prism-periodic-picker-root,.ag-pp-hold-ring,.ag-pp-mini-keycap,#ag-prism-wallpaper-root,#ag-prism-wallpaper-css,#ag-prism-suggester-css,.ag-omni-dock,.ag-omni-menu,.ag-prism-omni-menu,.ag-prism-omni-pane,.ag-cs-ctx-menu,.ag-cs-ctx-toast,.ag-cs-sb-more-wrap,[data-ag-prism-omni-owned="1"],.ag-cs-home-panel,.ag-cs-home-panel-seat,.ag-cs-liftoff-veil,.ag-cs-sidebar-glide-pill,.ag-cs-pill-glide,.ag-cs-conv-aura-host,.ag-cs-conv-glow,.ag-cs-prism-rim-cv,.ag-cs-code-fold-btn,.ag-cs-nav-outline-popover,.ag-cs-model-glyph,.ag-cs-panel-row-glyph,[data-testid="orchestrator-effort-bar"],.ag-cs-thinking-spark,.ag-cs-orbital-backdrop,.ag-cs-perf-backdrop,.ag-v2-habitat-prop,#' + SETTINGS_SEC_ID).forEach((e) => e.remove());
       const html = de();
       if (html) {
-        for (const s of 'style|theme|palette|light-preset|motion|target-fps|telemetry|effort-slider|thought-translate|home|composer|logo-ink|sidebar|sidebar-compact|sidebar-collapsed|sb-fold|has-crab|model-menu|takeover-open|lang|cjk|accent|corners|code-font|ligatures|ambient|win-blur|scroll-bottom|resizing|mascot-drag'.split('|')) ra(html, 'data-ag-cs-' + s);
+        for (const s of 'style|theme|palette|light-preset|motion|target-fps|telemetry|effort-slider|thought-translate|home|composer|logo-ink|sidebar|sidebar-compact|sidebar-collapsed|sb-fold|has-crab|model-menu|takeover-open|lang|cjk|accent|corners|code-font|ligatures|ambient|win-blur|scroll-bottom|resizing|mascot-drag|conv-ripple'.split('|')) ra(html, 'data-ag-cs-' + s);
         for (const s of '|thought-view|omni|link-target|sidebar-studio|sidebar-host-sync'.split('|')) ra(html, s ? 'data-ag-prism-' + s : 'data-ag-prism');
         rp(html, '--ag-spring-sidebar-ease'); rp(html, '--ag-spring-sidebar-dur');
       }

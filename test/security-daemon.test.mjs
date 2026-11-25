@@ -1262,7 +1262,7 @@ test('security-daemon 11 (#229 P1-2, P1-4, P2-4): WALLPAPER_BINDING 禁内联 To
             ready: true,
             isHostDom: domAliveIsHost,
             href: 'vscode-file://vscode-app/workbench.html',
-            prismAttr: '1.0.8-beta.1',
+            prismAttr: '1.0.8-beta.2',
             hasPrism: domAliveIsHost,
             hasRepoBridge: domAliveIsHost,
             hasThoughtBridge: domAliveIsHost,

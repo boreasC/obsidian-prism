@@ -440,8 +440,72 @@
       return Math.round(num);
     }
 
-    function extractTelemetrySnapshotObj(rt) {
+    function resolvePulseHostForTelemetry(doc, rt, opts) {
+      var anchor = opts && opts.anchorBtn ? opts.anchorBtn : null;
+      var tel = rt && rt.__agPrismTelemetry;
+      try {
+        if (anchor && tel && typeof tel.getBarForView === 'function') {
+          var byView = tel.getBarForView(anchor);
+          if (byView && byView.shadowRoot) return byView;
+        }
+      } catch (e0) {}
+      try {
+        if (anchor && typeof anchor.closest === 'function') {
+          var pane = anchor.closest('[data-testid="conversation-view"], [data-testid="agent-input-box"]');
+          if (pane && typeof pane.querySelector === 'function') {
+            var localBar = pane.querySelector(
+              '[data-ag-prism-pulse-bar], #ag-prism-pulse-bar, [data-ag-pulse-bar="true"], #ag-pulse-status-bar'
+            );
+            if (localBar && localBar.shadowRoot) return localBar;
+          }
+        }
+      } catch (e1) {}
+      try {
+        if (tel && typeof tel.getActiveBar === 'function') {
+          var actBar = tel.getActiveBar();
+          if (actBar && actBar.shadowRoot) return actBar;
+        }
+      } catch (e2) {}
+      try {
+        if (!doc) return null;
+        return (
+          (typeof doc.getElementById === 'function' &&
+            (doc.getElementById('ag-prism-pulse-bar') || doc.getElementById('ag-pulse-status-bar'))) ||
+          (typeof doc.querySelector === 'function' &&
+            doc.querySelector('[data-ag-prism-pulse-bar], #ag-prism-pulse-bar, #ag-pulse-status-bar')) ||
+          null
+        );
+      } catch (e3) {
+        return null;
+      }
+    }
+
+    function extractTelemetrySnapshotObj(rt, doc, opts) {
       if (!rt || typeof rt !== 'object') return null;
+      var anchor = opts && opts.anchorBtn ? opts.anchorBtn : null;
+      if (rt.__agPrismTelemetry && typeof rt.__agPrismTelemetry.getSnapshotForBar === 'function') {
+        try {
+          var scopedBar = anchor && typeof rt.__agPrismTelemetry.getBarForView === 'function'
+            ? rt.__agPrismTelemetry.getBarForView(anchor)
+            : typeof rt.__agPrismTelemetry.getActiveBar === 'function'
+            ? rt.__agPrismTelemetry.getActiveBar()
+            : null;
+          var scopedSnap = rt.__agPrismTelemetry.getSnapshotForBar(scopedBar || anchor);
+          if (scopedSnap && typeof scopedSnap === 'object') {
+            var sp = scopedSnap.speed || null;
+            var cx = sp && sp.context ? sp.context : null;
+            if (cx || sp) {
+              return {
+                usedTokens: cx && cx.usedTokens !== undefined ? cx.usedTokens : sp ? sp.totalTokens : undefined,
+                maxTokens: cx && cx.maxTokens > 0 ? cx.maxTokens : undefined,
+                usedFraction: cx && typeof cx.usedFraction === 'number' ? cx.usedFraction : undefined,
+                kvCacheRate: sp && sp.cache && typeof sp.cache.hitRate === 'number' ? sp.cache.hitRate : sp ? sp.cacheHitRate : undefined,
+                tps: sp && typeof sp.tps === 'number' ? sp.tps : undefined,
+              };
+            }
+          }
+        } catch (eSc) {}
+      }
       var candidates = [rt.__agPrismTelemetry, rt.__agPrismUsage, rt.__agPrismMetrics];
       for (var i = 0; i < candidates.length; i += 1) {
         var c = candidates[i];
@@ -464,21 +528,10 @@
       return null;
     }
 
-    function queryTelemetryDomNode(doc, selectorList) {
+    function queryTelemetryDomNode(doc, selectorList, rt, opts) {
       if (!doc) return null;
-      for (var i = 0; i < selectorList.length; i += 1) {
-        var sel = selectorList[i];
-        if (typeof doc.querySelector === 'function') {
-          try {
-            var hit = doc.querySelector(sel);
-            if (hit) return hit;
-          } catch (e) {}
-        }
-      }
       try {
-        var pulseHost =
-          (typeof doc.getElementById === 'function' && doc.getElementById('ag-pulse-status-bar')) ||
-          (typeof doc.querySelector === 'function' && doc.querySelector('#ag-pulse-status-bar'));
+        var pulseHost = resolvePulseHostForTelemetry(doc, rt, opts);
         var sr = pulseHost && pulseHost.shadowRoot;
         if (sr) {
           for (var j = 0; j < selectorList.length; j += 1) {
@@ -490,6 +543,27 @@
           }
         }
       } catch (e2) {}
+      var scope = doc;
+      try {
+        var anchor = opts && opts.anchorBtn ? opts.anchorBtn : null;
+        var pane = anchor && typeof anchor.closest === 'function' ? anchor.closest('[data-testid="conversation-view"]') : null;
+        if (pane) scope = pane;
+      } catch (eP) {}
+      for (var i = 0; i < selectorList.length; i += 1) {
+        var sel = selectorList[i];
+        if (typeof scope.querySelector === 'function') {
+          try {
+            var hit = scope.querySelector(sel);
+            if (hit) return hit;
+          } catch (e) {}
+        }
+        if (scope !== doc && typeof doc.querySelector === 'function') {
+          try {
+            var docHit = doc.querySelector(sel);
+            if (docHit) return docHit;
+          } catch (eD) {}
+        }
+      }
       return null;
     }
 
@@ -535,7 +609,7 @@
       var pulsePoints = null;
 
       try {
-        var src = extractTelemetrySnapshotObj(rt);
+        var src = extractTelemetrySnapshotObj(rt, doc, opts);
         if (src) {
           if (src.telemetryModule === 'off' || src.disabled === true || src.enabled === false) {
             return buildOfflineTelemetryResult('disabled');
@@ -589,11 +663,12 @@
 
       if (!Number.isFinite(usedTokens) && doc && !skipDomScan) {
         try {
-          var tokNode = queryTelemetryDomNode(doc, [
-            '[data-testid="context-tokens"]',
-            '#context-tokens',
-            '#ag-pulse-status-bar [data-testid*="token"]',
-          ]);
+          var tokNode = queryTelemetryDomNode(
+            doc,
+            ['[data-testid="context-tokens"]', '#context-tokens', '#ag-pulse-status-bar [data-testid*="token"]'],
+            rt,
+            opts
+          );
           if (tokNode && typeof tokNode.textContent === 'string') {
             var parsedTok = parseTokenStringNumber(tokNode.textContent);
             if (Number.isFinite(parsedTok) && parsedTok >= 0) {
@@ -610,7 +685,7 @@
             }
           }
           if (!Number.isFinite(usedTokens)) {
-            var pctNode = queryTelemetryDomNode(doc, ['[data-testid="context-percent"]', '#context-percent']);
+            var pctNode = queryTelemetryDomNode(doc, ['[data-testid="context-percent"]', '#context-percent'], rt, opts);
             if (pctNode && typeof pctNode.textContent === 'string') {
               var pm = /(\d+(?:\.\d+)?)\s*%/.exec(pctNode.textContent);
               if (pm) {
@@ -621,7 +696,7 @@
             }
           }
           if (!Number.isFinite(tps)) {
-            var tpsNode = queryTelemetryDomNode(doc, ['[data-testid="tps"]', '#tps']);
+            var tpsNode = queryTelemetryDomNode(doc, ['[data-testid="tps"]', '#tps'], rt, opts);
             if (tpsNode && typeof tpsNode.textContent === 'string') {
               var tm = /(\d+(?:\.\d+)?)/.exec(tpsNode.textContent);
               if (tm) tps = parseFloat(tm[1]);
@@ -972,10 +1047,136 @@
       return null;
     }
 
-    function findFallbackModelTrigger(doc) {
+    function isTriggerCandidateVisible(el) {
+      if (!el || el.isConnected === false || el.hidden === true) return false;
+      if (el.style && (el.style.display === 'none' || el.style.visibility === 'hidden')) return false;
+      if (typeof el.closest === 'function' && el.closest('[hidden], .hidden')) return false;
+      if (typeof el.checkVisibility === 'function') {
+        try {
+          if (!el.checkVisibility()) return false;
+        } catch (e) {}
+      }
+      return true;
+    }
+
+    function isSubagentTriggerNode(el) {
+      return Boolean(el && typeof el.closest === 'function' && el.closest('[data-testid="subagent-tab-conversation"]'));
+    }
+
+    function isTriggerExpanded(el) {
+      if (!el || typeof el.getAttribute !== 'function') return false;
+      return (
+        el.getAttribute('aria-expanded') === 'true' ||
+        el.getAttribute('data-state') === 'open' ||
+        (typeof el.hasAttribute === 'function' &&
+          el.hasAttribute('data-popup-open') &&
+          el.getAttribute('data-popup-open') !== 'false')
+      );
+    }
+
+    function findTriggerWithinScope(scope) {
+      if (!scope) return null;
+      var sel = '[data-testid="model-selector-trigger"], [data-ag-pp-trigger="1"]';
+      if (
+        elementMatches(scope, sel) &&
+        !isInsideExcludedZone(scope) &&
+        !isSubagentTriggerNode(scope) &&
+        scope.isConnected !== false
+      ) {
+        return scope;
+      }
+      if (typeof scope.querySelectorAll === 'function') {
+        var list = scope.querySelectorAll(sel);
+        var fallback = null;
+        for (var i = 0; i < list.length; i += 1) {
+          var cand = list[i];
+          if (!cand || isInsideExcludedZone(cand) || isSubagentTriggerNode(cand)) continue;
+          if (isTriggerCandidateVisible(cand)) return cand;
+          if (!fallback) fallback = cand;
+        }
+        if (fallback) return fallback;
+        var glyphs = scope.querySelectorAll('.ag-cs-model-glyph');
+        for (var j = 0; j < glyphs.length; j += 1) {
+          var g = glyphs[j];
+          var gBtn = g && typeof g.closest === 'function' ? g.closest('button, [role="button"]') : null;
+          if (gBtn && !isInsideExcludedZone(gBtn) && !isSubagentTriggerNode(gBtn)) {
+            if (isTriggerCandidateVisible(gBtn)) return gBtn;
+            if (!fallback) fallback = gBtn;
+          }
+        }
+        return fallback;
+      }
+      if (typeof scope.querySelector === 'function') {
+        var single = scope.querySelector(sel);
+        if (single && !isInsideExcludedZone(single) && !isSubagentTriggerNode(single)) return single;
+      }
+      return null;
+    }
+
+    function isHintConnected(doc, node) {
+      if (!node || typeof node !== 'object' || node.isConnected === false) return false;
+      if (node.parentNode) {
+        var cur = node;
+        var guard = 0;
+        while (cur && guard < 64) {
+          if (cur.isConnected === false) return false;
+          if (doc && (cur === doc || cur === doc.body || cur === doc.documentElement)) return true;
+          cur = cur.parentNode;
+          guard += 1;
+        }
+        return false;
+      }
+      return true;
+    }
+
+    function findFallbackModelTrigger(doc, hintEl) {
       if (!doc || typeof doc.querySelector !== 'function') return null;
+      var paneSel = '[data-testid="agent-input-box"], [data-testid="conversation-view"], .surface-composer-card, [data-tiling-pane]';
+      if (isHintConnected(doc, hintEl)) {
+        var fromHintDirect = findTriggerWithinScope(hintEl);
+        if (fromHintDirect) return fromHintDirect;
+        if (typeof hintEl.closest === 'function') {
+          var hintPane = hintEl.closest(paneSel);
+          if (hintPane) {
+            var fromHintPane = findTriggerWithinScope(hintPane);
+            if (fromHintPane) return fromHintPane;
+          }
+        }
+      }
+      var allTriggers = [];
+      if (typeof doc.querySelectorAll === 'function') {
+        try {
+          var nodes = doc.querySelectorAll('[data-testid="model-selector-trigger"], [data-ag-pp-trigger="1"]');
+          for (var i = 0; i < nodes.length; i += 1) {
+            var n = nodes[i];
+            if (!n || isInsideExcludedZone(n) || isSubagentTriggerNode(n)) continue;
+            allTriggers.push(n);
+            if (isTriggerExpanded(n) && isTriggerCandidateVisible(n)) return n;
+          }
+        } catch (eAll) {}
+      }
+      try {
+        var act = doc.activeElement;
+        if (act && act !== doc.body && act !== doc.documentElement && !isInsideExcludedZone(act)) {
+          var actDirect = findTriggerWithinScope(act);
+          if (actDirect) return actDirect;
+          if (typeof act.closest === 'function') {
+            var actPane = act.closest(paneSel);
+            if (actPane) {
+              var fromActPane = findTriggerWithinScope(actPane);
+              if (fromActPane) return fromActPane;
+            }
+          }
+        }
+      } catch (eAct) {}
+      var firstHidden = null;
+      for (var k = 0; k < allTriggers.length; k += 1) {
+        if (isTriggerCandidateVisible(allTriggers[k])) return allTriggers[k];
+        if (!firstHidden) firstHidden = allTriggers[k];
+      }
+      if (firstHidden) return firstHidden;
       var explicit = doc.querySelector('[data-testid="model-selector-trigger"], [data-ag-pp-trigger="1"]');
-      if (explicit) return explicit;
+      if (explicit && !isInsideExcludedZone(explicit)) return explicit;
       var glyph = doc.querySelector('.ag-cs-model-glyph');
       if (glyph && typeof glyph.closest === 'function') {
         var gBtn = glyph.closest('button, [role="button"]');
@@ -1002,15 +1203,23 @@
         } catch (eBtn) {}
       }
       var scope = null;
+      var hasExplicitPane = false;
       if (btn && typeof btn.closest === 'function') {
-        scope = btn.closest('[data-testid="agent-input-box"]');
+        scope = btn.closest('[data-testid="agent-input-box"]') || btn.closest('[data-testid="conversation-view"]');
+        if (scope) hasExplicitPane = true;
       }
-      if (!scope && doc && typeof doc.querySelectorAll === 'function') {
+      if (!scope && !hasExplicitPane && doc && doc.activeElement && typeof doc.activeElement.closest === 'function') {
+        var actBox =
+          doc.activeElement.closest('[data-testid="agent-input-box"]') ||
+          doc.activeElement.closest('[data-testid="conversation-view"]');
+        if (actBox && !isSubagentTriggerNode(actBox)) scope = actBox;
+      }
+      if (!scope && !hasExplicitPane && doc && typeof doc.querySelectorAll === 'function') {
         try {
           var boxes = doc.querySelectorAll('[data-testid="agent-input-box"]');
           for (var i = 0; i < boxes.length; i += 1) {
             var b = boxes[i];
-            if (b && (typeof b.closest !== 'function' || !b.closest('[data-testid="subagent-tab-conversation"]'))) {
+            if (b && !isSubagentTriggerNode(b)) {
               scope = b;
               break;
             }
@@ -1123,7 +1332,7 @@
       return false;
     }
 
-    function commitModelOption(ctx, targetOption, doc, onAfterCommit) {
+    function commitModelOption(ctx, targetOption, doc, onAfterCommit, anchorBtn) {
       if (!targetOption || !targetOption.label) return false;
       var applied = false;
       try {
@@ -1147,8 +1356,15 @@
           return true;
         }
         if (ctx && typeof ctx.unwrappedSetSelectedModel === 'function') {
+          var paneScope =
+            anchorBtn && typeof anchorBtn.closest === 'function'
+              ? anchorBtn.closest('[data-testid="agent-input-box"], [data-testid="conversation-view"]')
+              : null;
           var editor =
-            doc && typeof doc.querySelector === 'function' ? doc.querySelector('[contenteditable="true"]') : null;
+            (paneScope && typeof paneScope.querySelector === 'function'
+              ? paneScope.querySelector('[contenteditable="true"]')
+              : null) ||
+            (doc && typeof doc.querySelector === 'function' ? doc.querySelector('[contenteditable="true"]') : null);
           var prevActive = doc ? doc.activeElement : null;
           var blockEditorSteal = function (ev) {
             if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
@@ -1351,6 +1567,7 @@
       var onAfterCommit = p.syncMiniKeycapBadges || p.onAfterCommit || null;
       var prevCommittedZ = p.activeCommittedElementZ !== undefined ? p.activeCommittedElementZ : null;
       var inferOrchBadge = p.inferOrchCompactBadgeFromHost;
+      var anchorBtn = p.anchorBtn || null;
 
       var result = {
         committed: false,
@@ -1387,7 +1604,7 @@
             shortLabel: formatOrchElementCompactBadge(selectedZ, elSlot),
             miniKey: 'orchestrator',
           };
-          var didCommitOrchEl = commitModelOption(activeHostCtx, orchOptEl, doc, onAfterCommit);
+          var didCommitOrchEl = commitModelOption(activeHostCtx, orchOptEl, doc, onAfterCommit, anchorBtn);
           var didPickEl = commitOrchestratorPlannerPick(activeHostCtx, elPlannerOpt);
           if (didCommitOrchEl || didPickEl) {
             result.committed = true;
@@ -1419,7 +1636,7 @@
             shortLabel: formatOrchAuxCompactBadge(aSlot.id, aSlot.shortLabel || aSlot.title),
             miniKey: 'orchestrator',
           };
-          var didCommitOrchAux = commitModelOption(activeHostCtx, orchOptAux, doc, onAfterCommit);
+          var didCommitOrchAux = commitModelOption(activeHostCtx, orchOptAux, doc, onAfterCommit, anchorBtn);
           var didPickAux = commitOrchestratorPlannerPick(activeHostCtx, aPlannerOpt);
           if (didCommitOrchAux || didPickAux) {
             result.committed = true;
@@ -1441,7 +1658,7 @@
         if (stChosen) {
           if (activeEffortByZ) activeEffortByZ.set(selectedZ, stChosen.effort);
           writeSharedEffortMemory(rt, doc, stEntry.baseName || stEntry.name, stChosen.effort, false, p);
-          if (commitModelOption(activeHostCtx, stChosen.option, doc, onAfterCommit)) {
+          if (commitModelOption(activeHostCtx, stChosen.option, doc, onAfterCommit, anchorBtn)) {
             result.committed = true;
             result.hasModified = true;
           } else if (typeof onAfterCommit === 'function') {
@@ -1483,7 +1700,7 @@
             shortLabel: stShortBadge,
             miniKey: stAux.miniKey,
           };
-          if (commitModelOption(activeHostCtx, stOpt, doc, onAfterCommit)) {
+          if (commitModelOption(activeHostCtx, stOpt, doc, onAfterCommit, anchorBtn)) {
             result.committed = true;
             result.hasModified = true;
           } else if (typeof onAfterCommit === 'function') {

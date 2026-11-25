@@ -1097,7 +1097,7 @@ test('[PR #50] Windows UI Display Language overrides Intl regional format, prese
     // Case 4: PrismDaemon consumes skippedByLiveCfg and prevents repeated verifyAndHeal churn on the same sig
     const { PrismDaemon } = await import('../sidecars/daemon/main.mjs');
     let hostI18nEvalCount = 0;
-    let currentCfg = { ...cdp.DEFAULT_CONFIG, hostLocalization: 'auto', language: 'auto', omniModule: 'off', sidebarStudio: 'off', thoughtTranslate: 'off', periodicModelPicker: 'off', mascot: 'off' };
+    let currentCfg = { ...cdp.DEFAULT_CONFIG, hostLocalization: 'auto', language: 'auto', omniModule: 'off', sidebarStudio: 'off', thoughtTranslate: 'off', periodicModelPicker: 'off', mascot: 'off', homeLayout: 'off', homeMode: 'off' };
     const daemon = new PrismDaemon({ rootDir: ROOT, silent: true, enableStorageGuardTimer: false, enableAutoUpdateTimer: false });
     daemon.cdp = {
       ...cdp,
@@ -1142,6 +1142,8 @@ test('[PR #50] Windows UI Display Language overrides Intl regional format, prese
       periodicPickerMounted: false,
       mascotScriptId: null,
       mascotMounted: false,
+      homeStudioScriptId: null,
+      homeStudioMounted: false,
       session: {
         closed: false,
         send: async (m) => (m === 'Page.addScriptToEvaluateOnNewDocument' ? { identifier: 'hi-new' } : {}),
@@ -1166,6 +1168,7 @@ test('[PR #50] Windows UI Display Language overrides Intl regional format, prese
               hasSuggesterUi: false,
               hasPeriodicPicker: false,
               hasMascot: false,
+              hasHomeStudio: false,
               codeHash: daemon.cdp.buildInjectExpression ? '' : '',
               href: 'vscode-file://vscode-app/workbench.html',
             };

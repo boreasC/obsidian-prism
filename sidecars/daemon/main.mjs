@@ -1,7 +1,7 @@
 // Obsidian Prism Native Sidecar Daemon (sidecars/daemon/main.mjs)
 // - Auto-discovers DevToolsActivePort across Windows/macOS/Linux + fast Target.setDiscoverTargets push
 // - Registers Page.addScriptToEvaluateOnNewDocument + Runtime.evaluate (survives Ctrl+Shift+R reloads with zero app.asar touch!)
-// - Hot-upgrades legacy instances to Obsidian Prism v1.0.8-beta.1
+// - Hot-upgrades legacy instances to Obsidian Prism v1.0.8-beta.2
 // - Lazily serves real MetricsStore + DesktopUsage snapshots over __agPrismMetricsCall only when requested (0 idle CPU)
 // - Registers __agPrismRepoCall (paired with window.__agPrismRepoBridge) for live Git status & safe git pull --ff-only + hot-reload!
 
@@ -2141,6 +2141,9 @@ export class PrismDaemon {
     this.mascotExpr = '';
     this.mascotCodeHash = '';
     this._mascotHashSource = '';
+    this.homeStudioExpr = '';
+    this.homeStudioCodeHash = '';
+    this._homeStudioHashSource = '';
     this.codeHash = '';
     this.ownerToken = `${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
     this.pidFile = path.join(this.rootDir, '.daemon.pid');
@@ -2223,7 +2226,7 @@ export class PrismDaemon {
     this.updateService =
       _testUpdateService ||
       new UpdateService({
-        currentVersion: this.cdp?.PLUGIN_VERSION || '1.0.8-beta.1',
+        currentVersion: this.cdp?.PLUGIN_VERSION || '1.0.8-beta.2',
         channel: initialUpdateChannel,
       });
     if (_testUpdateService && typeof _testUpdateService.setChannel === 'function') {
@@ -2548,6 +2551,39 @@ export class PrismDaemon {
     }
     this._flushUsageDiskCache();
     return { fetched, flushed: true };
+  }
+
+  _resolveCdpQuitTarget(_testOverrides = null) {
+    if (_testOverrides?.cdpPort !== undefined) {
+      return {
+        cdpPort: Number(_testOverrides.cdpPort) || 0,
+        cdpBrowserWsPath: String(_testOverrides.cdpBrowserWsPath || '').trim(),
+      };
+    }
+    if (_testOverrides) {
+      return { cdpPort: 0, cdpBrowserWsPath: '' };
+    }
+    const verifiedPort = Number(this.browserPort) || 0;
+    const rawPort = this.overridePort || verifiedPort || discoverActivePort(this.overridePort, this.portFile) || 0;
+    const cdpPort = Number.isInteger(Number(rawPort)) && Number(rawPort) > 0 && Number(rawPort) <= 65535 ? Number(rawPort) : 0;
+    let cdpBrowserWsPath = '';
+    if (cdpPort > 0 && !this.overridePort) {
+      const files = this.portFile ? [this.portFile] : resolvePortFileCandidates();
+      for (const file of files) {
+        try {
+          const st = fs.lstatSync(file);
+          if (st.isSymbolicLink() || !st.isFile() || st.size > 2048) continue;
+          const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+          const filePort = parseInt(String(lines[0] || '').trim(), 10);
+          const wsPath = String(lines[1] || '').trim();
+          if (filePort === cdpPort && wsPath.startsWith('/devtools/browser/') && !/[\r\n\s]/.test(wsPath)) {
+            cdpBrowserWsPath = wsPath;
+            break;
+          }
+        } catch {}
+      }
+    }
+    return { cdpPort, cdpBrowserWsPath };
   }
 
   async _handleStorageAction(action, _testOverrides = null, rawInput = {}) {
@@ -2906,6 +2942,7 @@ export class PrismDaemon {
           try { host = await this.cdp.detectRunningAntigravityHost(); } catch {}
         }
 
+        const cdpTarget = this._resolveCdpQuitTarget(_testOverrides);
         const scriptPath = path.join(this.rootDir, 'sidecars', 'daemon', 'conversation-archive.mjs');
         const spawnRes = arch.spawnDetachedArchiveTask(
           {
@@ -2913,6 +2950,8 @@ export class PrismDaemon {
             convDir,
             archiveDir,
             hostPid: host?.pid || 0,
+            cdpPort: cdpTarget.cdpPort,
+            cdpBrowserWsPath: cdpTarget.cdpBrowserWsPath,
             exePath: host?.exePath || '',
             gracefulQuit: true,
             relaunch: true,
@@ -3021,6 +3060,7 @@ export class PrismDaemon {
         } else if (typeof this.cdp?.detectRunningAntigravityHost === 'function') {
           try { host = await this.cdp.detectRunningAntigravityHost(); } catch {}
         }
+        const cdpTarget = this._resolveCdpQuitTarget(_testOverrides);
         const scriptPath = path.join(this.rootDir, 'sidecars', 'daemon', 'conversation-archive.mjs');
         const spawnRes = arch.spawnDetachedArchiveTask(
           {
@@ -3028,6 +3068,8 @@ export class PrismDaemon {
             convDir,
             archiveDir,
             hostPid: host?.pid || 0,
+            cdpPort: cdpTarget.cdpPort,
+            cdpBrowserWsPath: cdpTarget.cdpBrowserWsPath,
             exePath: host?.exePath || '',
             gracefulQuit: true,
             relaunch: true,
@@ -3713,7 +3755,7 @@ export class PrismDaemon {
   }
 
   _buildCombinedUpdateStatus({ relState = null, gitState = null, action = 'update-status', channelOverride = null } = {}) {
-    const currentVersion = this.cdp?.PLUGIN_VERSION || this.updateService?.currentVersion || '1.0.8-beta.1';
+    const currentVersion = this.cdp?.PLUGIN_VERSION || this.updateService?.currentVersion || '1.0.8-beta.2';
     const rel = relState || this.updateService?.getStatus?.() || {};
     const autoUpdate = this._getAutoUpdateSetting();
     const explicitChannel = channelOverride === 'beta' || channelOverride === 'stable' ? channelOverride : null;
@@ -3998,7 +4040,7 @@ export class PrismDaemon {
         ...applyRes,
         action: 'apply-update',
         channel,
-        currentVersion: this.cdp?.PLUGIN_VERSION || this.updateService?.currentVersion || '1.0.8-beta.1',
+        currentVersion: this.cdp?.PLUGIN_VERSION || this.updateService?.currentVersion || '1.0.8-beta.2',
       };
     }
 
@@ -4259,6 +4301,7 @@ export class PrismDaemon {
     this.settingsExpr = '';
     this._buildMascotExprForConfig(cfg, cacheOpts);
     this._buildSuggesterExprForConfig(cfg, cacheOpts);
+    this._buildHomeStudioExprForConfig(cfg, cacheOpts);
 
     if (bundleCachePath) {
       if (deferDiskCacheWrite) {
@@ -5488,6 +5531,219 @@ export class PrismDaemon {
     entry.lastMascotScriptSig = '';
   }
 
+  // ── 第十二通道：Studio 首页仪表盘按配置门控独立延迟注入（homeLayout !== 'studio' 时零注入） ──
+  _hasHomeStudioFile() {
+    try {
+      return fs.existsSync(path.join(this.rootDir, 'home-studio-panel.js'));
+    } catch {
+      return false;
+    }
+  }
+
+  _isHomeStudioEnabled(cfgOverride = null) {
+    try {
+      const cfg = cfgOverride || this.cdp?.readConfig?.();
+      if (typeof this.cdp?.shouldEnableHomeStudio === 'function') {
+        return Boolean(this.cdp.shouldEnableHomeStudio(cfg));
+      }
+      return (cfg?.homeLayout || cfg?.homeMode || 'studio') === 'studio';
+    } catch {
+      return true;
+    }
+  }
+
+  _getHomeStudioCfgSig(cfgOverride = null) {
+    try {
+      const cfg = cfgOverride || this.cdp?.readConfig?.() || {};
+      return (cfg.homeLayout || cfg.homeMode || 'studio') === 'studio' ? 'studio' : 'off';
+    } catch {
+      return 'studio';
+    }
+  }
+
+  _extractHomeStudioCodeHash(expr) {
+    const str = typeof expr === 'string' ? expr : '';
+    if (!str) return '';
+    const m = /const targetHash = "([^"]+)"/.exec(str);
+    if (m && m[1]) return m[1];
+    return crypto.createHash('sha256').update(str).digest('hex').slice(0, 16);
+  }
+
+  _setHomeStudioExpr(expr) {
+    const next = typeof expr === 'string' ? expr : '';
+    this.homeStudioExpr = next;
+    this._homeStudioHashSource = next;
+    this.homeStudioCodeHash = this._extractHomeStudioCodeHash(next);
+    return next;
+  }
+
+  _buildHomeStudioExprForConfig(cfgOverride = null, cacheOpts = undefined) {
+    const cfg = cfgOverride || (typeof this.cdp?.readConfig === 'function' ? this.cdp.readConfig() : null);
+    if (
+      typeof this.cdp?.buildHomeStudioChannelExpression !== 'function' ||
+      !this._hasHomeStudioFile() ||
+      !this._isHomeStudioEnabled(cfg)
+    ) {
+      return this._setHomeStudioExpr('');
+    }
+    const opts = cacheOpts !== undefined ? cacheOpts : this._getChannelCacheOpts(true);
+    const expr = opts
+      ? this.cdp.buildHomeStudioChannelExpression(cfg, opts)
+      : this.cdp.buildHomeStudioChannelExpression(cfg);
+    if (cacheOpts === undefined && opts && this.running) {
+      this._scheduleBundleCacheFlush();
+    }
+    return this._setHomeStudioExpr(expr);
+  }
+
+  _getHomeStudioExprHash(expr = this.homeStudioExpr) {
+    const str = typeof expr === 'string' ? expr : '';
+    if (!str) return '';
+    if (str === this._homeStudioHashSource && this.homeStudioCodeHash) {
+      return this.homeStudioCodeHash;
+    }
+    const hash = this._extractHomeStudioCodeHash(str);
+    if (str === this.homeStudioExpr) {
+      this._homeStudioHashSource = str;
+      this.homeStudioCodeHash = hash;
+    }
+    return hash;
+  }
+
+  _getHomeStudioCleanupExpression() {
+    return (
+      this.cdp?.HOME_STUDIO_REMOVE_EXPRESSION ||
+      "(() => { try { (window.__agPrism || window.__agClaudeStyle)?.detachHomeStudio?.(); } catch {} try { document.getElementById?.('ag-prism-studio-v101-css')?.remove?.(); } catch {} try { document.querySelectorAll?.('.ag-cs-home-panel-seat, .ag-cs-home-panel')?.forEach?.((n) => n.remove()); } catch {} try { document.documentElement?.removeAttribute?.('data-ag-prism-scope'); } catch {} try { delete window.__agPrismHomeStudioPanel; delete globalThis.__agPrismHomeStudioPanel; delete window.__agHomeStudioPanel; delete globalThis.__agHomeStudioPanel; } catch {} return { ok: true, status: 'off' }; })()"
+    );
+  }
+
+  async _resetHomeStudioEntryState(entry, session = entry?.session) {
+    if (!entry) return;
+    if (entry.homeStudioScriptId && session && !session.closed) {
+      await session
+        .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.homeStudioScriptId })
+        .catch(() => {});
+    }
+    entry.homeStudioScriptId = null;
+    entry.homeStudioMounted = false;
+    entry.lastHomeStudioSig = '';
+    entry.lastHomeStudioScriptSig = '';
+  }
+
+  async _syncHomeStudioOnEntry(
+    entry,
+    cfgNow,
+    {
+      expr = null,
+      hash = '',
+      enabled = null,
+      probe = null,
+      forceReplaceScript = false,
+      forceEval = false,
+      runCleanup = false,
+      evalTimeoutMs = 4500,
+      cleanupTimeoutMs = 3500,
+    } = {}
+  ) {
+    if (!entry || entry.session.closed) return;
+    const isEnabled = enabled !== null ? Boolean(enabled) : this._hasHomeStudioFile() && this._isHomeStudioEnabled(cfgNow);
+    if (isEnabled) {
+      const activeExpr = expr || this.homeStudioExpr || this._buildHomeStudioExprForConfig(cfgNow);
+      if (!activeExpr) return;
+      const hsHash = hash || this._getHomeStudioExprHash(activeExpr);
+      const hsSig = `${this._getHomeStudioCfgSig(cfgNow)}:${hsHash}`;
+      if (forceReplaceScript || !entry.homeStudioScriptId || entry.lastHomeStudioScriptSig !== hsSig) {
+        if (entry.homeStudioScriptId) {
+          await entry.session
+            .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.homeStudioScriptId })
+            .catch(() => {});
+          entry.homeStudioScriptId = null;
+        }
+        const hsAdd = await entry.session
+          .send('Page.addScriptToEvaluateOnNewDocument', { source: activeExpr })
+          .catch(() => null);
+        if (hsAdd && hsAdd.identifier) {
+          entry.homeStudioScriptId = hsAdd.identifier;
+          entry.lastHomeStudioScriptSig = hsSig;
+        } else {
+          entry.lastHomeStudioScriptSig = '';
+        }
+      }
+      const needsEval = forceEval || !probe || !probe.hasHomeStudio || Boolean(hsHash && probe.homeStudioCodeHash !== hsHash);
+      if (needsEval && !entry.session.closed) {
+        const evalRes =
+          evalTimeoutMs > 0
+            ? await entry.session.evaluate(activeExpr, false, evalTimeoutMs).catch(() => null)
+            : await entry.session.evaluate(activeExpr).catch(() => null);
+        if (evalRes && evalRes.ok) {
+          entry.homeStudioMounted = !evalRes.skippedByLiveCfg;
+          entry.lastHomeStudioSig = hsSig;
+        }
+      }
+      return;
+    }
+
+    const hadBefore = Boolean(entry.homeStudioScriptId || entry.homeStudioMounted);
+    if (entry.homeStudioScriptId) {
+      await entry.session
+        .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.homeStudioScriptId })
+        .catch(() => {});
+      entry.homeStudioScriptId = null;
+    }
+    if ((runCleanup || hadBefore || probe?.hasHomeStudio) && !entry.session.closed) {
+      if (cleanupTimeoutMs > 0) {
+        await entry.session.evaluate(this._getHomeStudioCleanupExpression(), false, cleanupTimeoutMs).catch(() => null);
+      } else {
+        await entry.session.evaluate(this._getHomeStudioCleanupExpression()).catch(() => null);
+      }
+    }
+    entry.homeStudioMounted = false;
+    entry.lastHomeStudioSig = '';
+    entry.lastHomeStudioScriptSig = '';
+  }
+
+  async _deliverHomeStudioChannelToEntry(entry, executionContextId = null) {
+    if (!entry || entry.session.closed) return false;
+    if (entry._homeStudioChannelInFlight) return false;
+    const cfgNow = typeof this.cdp?.readConfig === 'function' ? this.cdp.readConfig() : null;
+    if (!this._hasHomeStudioFile() || !this._isHomeStudioEnabled(cfgNow)) return false;
+    const expr = this.homeStudioExpr || this._buildHomeStudioExprForConfig(cfgNow);
+    if (!expr) return false;
+    const hsHash = this._getHomeStudioExprHash(expr);
+    const hsSig = `${this._getHomeStudioCfgSig(cfgNow)}:${hsHash}`;
+    entry._homeStudioChannelInFlight = true;
+    try {
+      if (!entry.homeStudioScriptId || entry.lastHomeStudioScriptSig !== hsSig) {
+        if (entry.homeStudioScriptId) {
+          await entry.session
+            .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.homeStudioScriptId })
+            .catch(() => {});
+          entry.homeStudioScriptId = null;
+        }
+        const hsAdd = await entry.session
+          .send('Page.addScriptToEvaluateOnNewDocument', { source: expr })
+          .catch(() => null);
+        if (hsAdd && hsAdd.identifier) {
+          entry.homeStudioScriptId = hsAdd.identifier;
+          entry.lastHomeStudioScriptSig = hsSig;
+        }
+      }
+      const evalParams = { expression: expr, returnByValue: true };
+      if (typeof executionContextId === 'number' && executionContextId > 0) {
+        evalParams.contextId = executionContextId;
+      }
+      const res = await entry.session.send('Runtime.evaluate', evalParams, 5000).catch(() => null);
+      if (res && res.result && res.result.value && res.result.value.ok) {
+        entry.homeStudioMounted = !res.result.value.skippedByLiveCfg;
+        entry.lastHomeStudioSig = hsSig;
+        return true;
+      }
+      return false;
+    } finally {
+      entry._homeStudioChannelInFlight = false;
+    }
+  }
+
   _isTelemetryDisabled(cfgOverride = null) {
     try {
       const cfg = cfgOverride || this.cdp?.readConfig?.();
@@ -5623,7 +5879,7 @@ export class PrismDaemon {
   _getSidebarServerMeta() {
     return {
       binding: SIDEBAR_BINDING,
-      version: this.cdp?.PLUGIN_VERSION || '1.0.8-beta.1',
+      version: this.cdp?.PLUGIN_VERSION || '1.0.8-beta.2',
       schemaVersion: 2,
       serviceReady: !this._sidebarStopped && typeof this.sidebarService?.handleRpc === 'function' &&
         !this.sidebarService.getBootDiagnostic?.(),
@@ -7340,6 +7596,7 @@ export class PrismDaemon {
         let periodicPickerSnap = this.periodicPickerExpr;
         let mascotSnap = this.mascotExpr;
         let suggesterSnap = this.suggesterExpr;
+        let homeStudioSnap = this.homeStudioExpr;
         const currentCfg = typeof this.cdp.readConfig === 'function' ? this.cdp.readConfig() : {};
         if (currentCfg?.telemetryModule === 'off') {
           this._releaseIdleTelemetry(true);
@@ -7383,6 +7640,12 @@ export class PrismDaemon {
           suggesterSnap = this._buildSuggesterExprForConfig(currentCfg);
         }
         const suggesterHash = suggesterSnap ? this._getSuggesterExprHash(suggesterSnap) : '';
+        const homeStudioEnabled = this._hasHomeStudioFile() && this._isHomeStudioEnabled(currentCfg);
+        if (homeStudioEnabled && !homeStudioSnap && typeof this.cdp.buildHomeStudioChannelExpression === 'function') {
+          homeStudioSnap = this._buildHomeStudioExprForConfig(currentCfg);
+        }
+        const homeStudioHash = homeStudioSnap ? this._getHomeStudioExprHash(homeStudioSnap) : '';
+        const homeStudioSig = homeStudioEnabled ? `${this._getHomeStudioCfgSig(currentCfg)}:${homeStudioHash}` : '';
         const canFastRefresh = typeof this.cdp.buildConfigRefreshExpression === 'function';
         const baseRefreshExpr = canFastRefresh ? this.cdp.buildConfigRefreshExpression() : null;
         await this._syncSwarmSessionsForConfig(currentCfg).catch(() => {});
@@ -7621,6 +7884,28 @@ export class PrismDaemon {
                 entry.suggesterSkipped = false;
                 entry.lastSuggesterHash = '';
               }
+              if (abortIfStale()) return;
+              const hadHomeStudio = Boolean(entry.homeStudioScriptId || entry.homeStudioMounted);
+              const homeStudioChanged = Boolean(
+                homeStudioEnabled &&
+                  homeStudioSnap &&
+                  (entry.lastHomeStudioSig !== homeStudioSig || !entry.homeStudioScriptId || !entry.homeStudioMounted)
+              );
+              if (homeStudioEnabled && homeStudioSnap) {
+                if (!skippedStale && !entry.session.closed && (!refreshedFast || homeStudioChanged)) {
+                  const evalRes = await entry.session.evaluate(homeStudioSnap).catch(() => null);
+                  if (evalRes && evalRes.ok) {
+                    entry.homeStudioMounted = !evalRes.skippedByLiveCfg;
+                    entry.lastHomeStudioSig = homeStudioSig;
+                  }
+                }
+              } else if ((hadHomeStudio || !this._isHomeStudioEnabled(currentCfg)) && !skippedStale && !entry.session.closed) {
+                if (hadHomeStudio) {
+                  await entry.session.evaluate(this._getHomeStudioCleanupExpression()).catch(() => {});
+                }
+                entry.homeStudioMounted = false;
+                entry.lastHomeStudioSig = '';
+              }
 
               // Coalesce persistent NewDocument script replacement if a newer mutation is already queued!
               if (this._broadcastPending || this._configSeq !== snapSeq || entry.session.closed) {
@@ -7836,6 +8121,29 @@ export class PrismDaemon {
                   entry.lastSuggesterScriptHash = suggesterHash;
                 }
               }
+              if (!homeStudioEnabled || !homeStudioSnap) {
+                if (entry.homeStudioScriptId) {
+                  await entry.session
+                    .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.homeStudioScriptId })
+                    .catch(() => {});
+                  entry.homeStudioScriptId = null;
+                }
+                entry.lastHomeStudioScriptSig = '';
+              } else if ((entry.lastHomeStudioScriptSig !== homeStudioSig || !entry.homeStudioScriptId) && !entry.session.closed) {
+                if (entry.homeStudioScriptId) {
+                  await entry.session
+                    .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.homeStudioScriptId })
+                    .catch(() => {});
+                  entry.homeStudioScriptId = null;
+                }
+                const hsAdd = await entry.session
+                  .send('Page.addScriptToEvaluateOnNewDocument', { source: homeStudioSnap })
+                  .catch(() => null);
+                if (hsAdd && hsAdd.identifier) {
+                  entry.homeStudioScriptId = hsAdd.identifier;
+                  entry.lastHomeStudioScriptSig = homeStudioSig;
+                }
+              }
             })
           )
         );
@@ -7962,6 +8270,10 @@ export class PrismDaemon {
           this._buildSuggesterExprForConfig(curCfg, chOpts);
           if (chOpts && this.suggesterExpr) usedChCache = true;
         }
+        if (!this.homeStudioExpr && this._hasHomeStudioFile() && this._isHomeStudioEnabled(curCfg) && typeof this.cdp.buildHomeStudioChannelExpression === 'function') {
+          this._buildHomeStudioExprForConfig(curCfg, chOpts);
+          if (chOpts && this.homeStudioExpr) usedChCache = true;
+        }
         if (usedChCache && this.running) {
           this._scheduleBundleCacheFlush();
         }
@@ -8056,6 +8368,7 @@ export class PrismDaemon {
         entry.lastSuggesterHash = '';
         entry.lastSuggesterScriptHash = '';
         await this._resetPeriodicPickerEntryState(entry);
+        await this._resetHomeStudioEntryState(entry);
         return mainRes;
       }
 
@@ -8299,6 +8612,12 @@ export class PrismDaemon {
         evalTimeoutMs: 0,
         cleanupTimeoutMs: 0,
       });
+      await this._syncHomeStudioOnEntry(entry, getCurrentCfg(), {
+        forceReplaceScript: true,
+        forceEval: true,
+        evalTimeoutMs: 0,
+        cleanupTimeoutMs: 0,
+      });
       const hadSuggesterBefore = Boolean(entry.suggesterScriptId || entry.suggesterMounted);
       if (entry.suggesterScriptId) {
         await entry.session
@@ -8360,6 +8679,10 @@ export class PrismDaemon {
         if (!parsed || typeof parsed !== 'object') return;
         if (parsed.action === 'request-settings-panel') {
           await this._deliverSettingsChannelToEntry(entry, executionContextId);
+          return;
+        }
+        if (parsed.action === 'request-home-studio-panel') {
+          await this._deliverHomeStudioChannelToEntry(entry, executionContextId);
           return;
         }
         const updated =
@@ -9195,6 +9518,10 @@ export class PrismDaemon {
       periodicPickerMounted: false,
       lastPeriodicPickerSig: '',
       lastPeriodicPickerScriptSig: '',
+      homeStudioScriptId: null,
+      homeStudioMounted: false,
+      lastHomeStudioSig: '',
+      lastHomeStudioScriptSig: '',
       sidebarHostVerified: false,
       sidebarVerifiedDocument: -1,
       sidebarHostContextId: null,
@@ -9533,6 +9860,16 @@ export class PrismDaemon {
         !entry.mascotMounted ||
         Boolean(expectedMascotEarlySig && (entry.lastMascotSig !== expectedMascotEarlySig || entry.lastMascotScriptSig !== expectedMascotEarlySig))
       : Boolean(entry.mascotScriptId || entry.mascotMounted);
+    const homeStudioAvailable = this._isHomeStudioEnabled(cfg) && this._hasHomeStudioFile();
+    const expectedHomeStudioEarlySig =
+      homeStudioAvailable && this.homeStudioExpr
+        ? `${this._getHomeStudioCfgSig(cfg)}:${this._getHomeStudioExprHash(this.homeStudioExpr)}`
+        : '';
+    const homeStudioNeedsSync = homeStudioAvailable
+      ? !entry.homeStudioScriptId ||
+        !entry.homeStudioMounted ||
+        Boolean(expectedHomeStudioEarlySig && (entry.lastHomeStudioSig !== expectedHomeStudioEarlySig || entry.lastHomeStudioScriptSig !== expectedHomeStudioEarlySig))
+      : Boolean(entry.homeStudioScriptId || entry.homeStudioMounted);
     const now = Date.now();
     const hashMatches = !this.codeHash || entry.lastVerifiedCodeHash === this.codeHash;
     if (
@@ -9544,6 +9881,7 @@ export class PrismDaemon {
       !suggesterNeedsSync &&
       !periodicPickerNeedsSync &&
       !mascotNeedsSync &&
+      !homeStudioNeedsSync &&
       !entry.verifyDirty &&
       hashMatches &&
       entry.lastVerifyAt > 0 &&
@@ -9620,6 +9958,13 @@ export class PrismDaemon {
           hostI18nMode: String(window.__agPrismHostI18n?.getStatus?.()?.mode || ''),
           hasMascot: Boolean(window.__agDualMascotRig || globalThis.__agDualMascotRig),
           mascotCodeHash: String((window.__agDualMascotRig || globalThis.__agDualMascotRig)?.__prismCodeHash || ''),
+          hasHomeStudio: Boolean(window.__agPrismHomeStudioPanel || globalThis.__agPrismHomeStudioPanel || window.__agHomeStudioPanel || globalThis.__agHomeStudioPanel),
+          homeStudioCodeHash: String((window.__agPrismHomeStudioPanel || globalThis.__agPrismHomeStudioPanel || window.__agHomeStudioPanel || globalThis.__agHomeStudioPanel)?.__prismCodeHash || ''),
+          needsHomeStudioChannel: Boolean(
+            st?.cfg?.homeLayout === 'studio' &&
+              document.querySelector('.agy-home') &&
+              !(window.__agPrismHomeStudioPanel || globalThis.__agPrismHomeStudioPanel || window.__agHomeStudioPanel || globalThis.__agHomeStudioPanel)
+          ),
           needsSettingsChannel: Boolean(
             (document.querySelector('[role="dialog"]') || document.getElementById('ag-cs-settings-sec')) &&
               (!window.__agPrismSettingsPanel || !(window.__agCsLocales && window.__agCsLocales.__isFullLocales))
@@ -9741,6 +10086,17 @@ export class PrismDaemon {
       const mascotScriptStale = Boolean(!entry.mascotScriptId || (expectedMascotSig && entry.lastMascotScriptSig !== expectedMascotSig));
       const needsMascotHeal = hasMascotOnDisk && (!probe.hasMascot || mascotHashMismatch || mascotScriptStale);
       const needsMascotCleanup = !mascotEnabled && Boolean(probe.hasMascot || entry.mascotScriptId || entry.mascotMounted);
+      const homeStudioEnabled = this._isHomeStudioEnabled(cfg);
+      const hasHomeStudioOnDisk = homeStudioEnabled && this._hasHomeStudioFile();
+      if (hasHomeStudioOnDisk && !this.homeStudioExpr && typeof this.cdp.buildHomeStudioChannelExpression === 'function') {
+        this._buildHomeStudioExprForConfig(cfg);
+      }
+      const expectedHomeStudioHash = hasHomeStudioOnDisk && this.homeStudioExpr ? this._getHomeStudioExprHash(this.homeStudioExpr) : '';
+      const expectedHomeStudioSig = hasHomeStudioOnDisk && this.homeStudioExpr ? `${this._getHomeStudioCfgSig(cfg)}:${expectedHomeStudioHash}` : '';
+      const homeStudioHashMismatch = Boolean(expectedHomeStudioHash && probe.homeStudioCodeHash !== expectedHomeStudioHash);
+      const homeStudioScriptStale = Boolean(!entry.homeStudioScriptId || (expectedHomeStudioSig && entry.lastHomeStudioScriptSig !== expectedHomeStudioSig));
+      const needsHomeStudioHeal = hasHomeStudioOnDisk && (!probe.hasHomeStudio || homeStudioHashMismatch || homeStudioScriptStale);
+      const needsHomeStudioCleanup = !homeStudioEnabled && Boolean(probe.hasHomeStudio || entry.homeStudioScriptId || entry.homeStudioMounted);
       let healed = false;
       if (
         (entry.sidebarHostVerified === false && probe.isHostDom) ||
@@ -9833,6 +10189,7 @@ export class PrismDaemon {
           entry.lastSuggesterScriptHash = '';
           await this._resetPeriodicPickerEntryState(entry);
           await this._resetMascotEntryState(entry);
+          await this._resetHomeStudioEntryState(entry);
           this._markTargetIgnored({ id: entry.pageId, webSocketDebuggerUrl: entry.wsUrl }, probe.href || entry.url);
           entry.session.close();
           this.sessions.delete(entry.wsUrl);
@@ -9957,6 +10314,14 @@ export class PrismDaemon {
             enabled: mascotEnabled,
             probe,
             runCleanup: needsMascotCleanup,
+          });
+        }
+        if ((homeStudioEnabled && (needsHomeStudioHeal || probe.needsHomeStudioChannel)) || (!homeStudioEnabled && needsHomeStudioCleanup)) {
+          await this._syncHomeStudioOnEntry(entry, cfg, {
+            enabled: homeStudioEnabled && hasHomeStudioOnDisk,
+            probe,
+            forceEval: Boolean(probe.needsHomeStudioChannel),
+            runCleanup: needsHomeStudioCleanup,
           });
         }
         if (thoughtEnabled) {
@@ -10214,6 +10579,15 @@ export class PrismDaemon {
             enabled: needsMascotHeal,
             probe,
             runCleanup: needsMascotCleanup,
+          });
+        }
+        if (needsHomeStudioHeal || probe.needsHomeStudioChannel || needsHomeStudioCleanup) {
+          healed = true;
+          await this._syncHomeStudioOnEntry(entry, cfg, {
+            enabled: homeStudioEnabled && hasHomeStudioOnDisk,
+            probe,
+            forceEval: Boolean(probe.needsHomeStudioChannel),
+            runCleanup: needsHomeStudioCleanup,
           });
         }
         if (probe.needsSettingsChannel) {
@@ -10577,6 +10951,7 @@ export class PrismDaemon {
           entry.lastSuggesterScriptHash = '';
           await this._resetPeriodicPickerEntryState(entry);
           await this._resetMascotEntryState(entry);
+          await this._resetHomeStudioEntryState(entry);
           await this._cleanupSwarmSubFrames(entry, cleanPageDom).catch(() => {});
           entry.swarmSubFrames?.clear?.();
           if (cleanPageDom && !entry.session.closed) {
@@ -10999,7 +11374,8 @@ export class PrismDaemon {
             entry.lastSuggesterHash = '';
             entry.lastSuggesterScriptHash = '';
             await this._resetPeriodicPickerEntryState(entry);
-          await this._resetMascotEntryState(entry);
+            await this._resetMascotEntryState(entry);
+            await this._resetHomeStudioEntryState(entry);
             await entry.session.evaluate(this.cdp.REMOVE_EXPRESSION).catch(() => {});
             if (entry._isoPauseTimers) {
               for (const tid of entry._isoPauseTimers) clearTimeout(tid);

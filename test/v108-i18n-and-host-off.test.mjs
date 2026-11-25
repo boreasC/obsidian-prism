@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
@@ -404,7 +405,7 @@ test('Battle 2 CI Guard: macOS installer NOT_FOUND_MSG uses InstallerI18n (0 har
 
 test('Battle 2 Channel 1 Slimming (< 550 KB across all 9 language modes), SYNC_ROOT_FILES integrity & Ch9/Ch10 disk cache', () => {
   // Deferred modules removed from Channel 1 RUNTIME_PARTS, preserved in SYNC_ROOT_FILES
-  for (const mod of ['i18n-locales.js', 'settings-panel.js', 'dual-mascot-rig.js']) {
+  for (const mod of ['i18n-locales.js', 'settings-panel.js', 'dual-mascot-rig.js', 'home-studio-panel.js']) {
     assert.equal(cdp.RUNTIME_PARTS.includes(mod), false, `${mod} must be split out of Channel 1 RUNTIME_PARTS`);
     assert.equal(cdp.SYNC_ROOT_FILES.includes(mod), true, `${mod} MUST remain in SYNC_ROOT_FILES for installer/updater`);
   }
@@ -1133,5 +1134,255 @@ test('Pre-release hardening: Ch1->Ch9 brand-mark slimming, Mascot cleanup select
   assert.ok(
     upSliderSrc.includes('m.matches(\'[data-testid="orchestrator-picker-effort"]\')'),
     'effort-slider _isL3/_sySubs must detect v2.35.1 orchestrator-picker-effort nodes'
+  );
+});
+
+test('Channel 12 (homeStudio): deferred extraction, cold/route-switch mount, idempotent & hot-swap zero-leak, config gating, disk cache, daemon sync & packaging parity', async () => {
+  // 1) Module boundary, config gating & Channel 1 budget headroom
+  assert.equal(cdp.RUNTIME_PARTS.includes('home-studio-panel.js'), false, 'home-studio-panel.js must NOT be in Channel 1 RUNTIME_PARTS');
+  assert.equal(cdp.DEFERRED_ROOT_MODULES.includes('home-studio-panel.js'), true, 'home-studio-panel.js must be in DEFERRED_ROOT_MODULES');
+  assert.equal(cdp.SYNC_ROOT_FILES.includes('home-studio-panel.js'), true, 'home-studio-panel.js must remain in SYNC_ROOT_FILES');
+  assert.equal(cdp.shouldEnableHomeStudio({ homeLayout: 'studio' }), true);
+  assert.equal(cdp.shouldEnableHomeStudio({ homeLayout: 'classic' }), false);
+  assert.equal(cdp.shouldEnableHomeStudio({ homeLayout: 'off' }), false);
+  assert.equal(cdp.buildHomeStudioChannelExpression({ homeLayout: 'classic' }), '');
+  assert.equal(cdp.buildHomeStudioChannelExpression({ homeLayout: 'off' }), '');
+
+  const ch1AutoExpr = cdp.buildInjectExpression({ ...cdp.DEFAULT_CONFIG, language: 'auto' });
+  const ch1AutoBytes = Buffer.byteLength(ch1AutoExpr, 'utf8');
+  assert.ok(ch1AutoBytes < 547_500, `Channel 1 auto must keep >= 2 KB headroom below 549.5 KB after Ch12 split, got ${ch1AutoBytes} B`);
+  const homeStudioPreparedBytes = Buffer.byteLength(
+    cdp.prepareRuntimePart('home-studio-panel.js', fs.readFileSync(path.join(ROOT, 'home-studio-panel.js'), 'utf8')),
+    'utf8'
+  );
+  assert.ok(homeStudioPreparedBytes > 20_000, `Expected split home-studio-panel.js savings > 20 KB, got ${homeStudioPreparedBytes} B`);
+  assert.equal(ch1AutoExpr.includes('syncHomeStudio') && ch1AutoExpr.includes('__agHomeStudioPanel'), true, 'Channel 1 ui-runtime bridge must expose syncHomeStudio and __agHomeStudioPanel hook');
+  assert.equal(ch1AutoExpr.includes('.ag-cs-home-panel-head{'), false, 'Channel 1 must NOT inline home-studio-panel.js STUDIO_EXTRA_CSS body');
+  const refExpr = cdp.buildConfigRefreshExpression({ homeLayout: 'classic' });
+  assert.ok(Buffer.byteLength(refExpr, 'utf8') < 4096, `configRefresh must stay < 4096 B, got ${Buffer.byteLength(refExpr, 'utf8')} B`);
+
+  // 2) Disk cache hit verification for Channel 12 homeStudio
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prism-ch12-cache-'));
+  const cachePath = path.join(tmpDir, '.bundle-cache.json');
+  try {
+    cdp.resetBundleCacheStats();
+    const ch12Cold = cdp.buildHomeStudioChannelExpression({ ...cdp.DEFAULT_CONFIG, homeLayout: 'studio' }, { cachePath });
+    assert.ok(ch12Cold.length > 20_000, 'Expected compiled Channel 12 payload > 20 KB');
+
+    delete require.cache[require.resolve(path.join(ROOT, 'cdp.js'))];
+    const cdpFresh = require(path.join(ROOT, 'cdp.js'));
+    cdpFresh.resetBundleCacheStats();
+    const ch12Hit = cdpFresh.buildHomeStudioChannelExpression({ ...cdpFresh.DEFAULT_CONFIG, homeLayout: 'studio' }, { cachePath });
+    assert.equal(ch12Hit, ch12Cold, 'Channel 12 disk cache hit must match cold compile byte-for-byte');
+    const st = cdpFresh.getBundleCacheStats();
+    assert.ok(st.channelHitsByName.homeStudio >= 1, 'Expected channelHitsByName.homeStudio >= 1 on cold reload');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+
+  // 3) Helper to create VM runtime sandbox with timer tracking for cold-home / route-switch / hot-swap tests
+  const createHomeSandbox = ({ startOnHome = true } = {}) => {
+    const env = createMiniDom('en');
+    const activeTimers = new Set();
+    let timerSeq = 0;
+    const bindingCalls = [];
+    const store = new Map();
+    const homeEl = env.doc.createElement('div');
+    homeEl.className = 'agy-home';
+    const greet = env.doc.createElement('div');
+    greet.setAttribute('data-testid', 'home-greeting');
+    const h1 = env.doc.createElement('h1');
+    h1.textContent = 'Welcome back';
+    greet.appendChild(h1);
+    homeEl.appendChild(greet);
+    if (startOnHome) env.body.appendChild(homeEl);
+
+    Object.assign(env.win, {
+      location: { href: 'https://127.0.0.1:42000/', pathname: startOnHome ? '/' : '/c/conv-1' },
+      innerWidth: 1280,
+      innerHeight: 800,
+      devicePixelRatio: 1,
+      addEventListener() {},
+      removeEventListener() {},
+      localStorage: {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: (k) => store.delete(k),
+      },
+      getComputedStyle: () => ({ display: 'block', visibility: 'visible', opacity: '1', getPropertyValue: () => '' }),
+      matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+      MutationObserver: class { observe() {} disconnect() {} takeRecords() { return []; } },
+      ResizeObserver: class { observe() {} disconnect() {} },
+      HTMLElement: Object,
+      Element: Object,
+      Node: { ELEMENT_NODE: 1, TEXT_NODE: 3 },
+      requestAnimationFrame: (fn) => {
+        const id = ++timerSeq;
+        activeTimers.add(id);
+        return id;
+      },
+      cancelAnimationFrame: (id) => { activeTimers.delete(id); },
+      setTimeout: (fn, ms) => {
+        const id = ++timerSeq;
+        activeTimers.add(id);
+        return id;
+      },
+      clearTimeout: (id) => { activeTimers.delete(id); },
+      setInterval: () => 999999,
+      clearInterval: () => {},
+      performance: { now: () => Date.now() },
+      __agPrismSetting: (payload) => { bindingCalls.push(JSON.parse(payload)); },
+      Math, Date, JSON, Map, Set, WeakMap, WeakSet, Array, Object, String, Number, Boolean, Promise, Uint8Array, Float32Array, Intl, RegExp, Error, TypeError, encodeURIComponent, decodeURIComponent,
+    });
+    env.doc.defaultView = env.win;
+    env.doc.readyState = 'complete';
+    env.doc.hidden = false;
+    return { env, homeEl, greet, h1, activeTimers, bindingCalls };
+  };
+
+  const ch12Expr = cdp.buildHomeStudioChannelExpression({ ...cdp.DEFAULT_CONFIG, homeLayout: 'studio' });
+
+  // 3a) Cold start on .agy-home: Channel 1 loads before Channel 12 without error, requests Ch12, then Ch12 mounts immediately & supports idempotent reuse + hot-swap zero-leak
+  {
+    const { env, homeEl, h1, activeTimers, bindingCalls } = createHomeSandbox({ startOnHome: true });
+    const bootRes = vm.runInNewContext(cdp.buildInjectExpression({ ...cdp.DEFAULT_CONFIG, language: 'en', homeLayout: 'studio' }), env.win);
+    assert.equal(bootRes.status, 'ok');
+    assert.equal(env.win.__agHomeStudioPanel, undefined, 'Channel 1 alone must not define __agHomeStudioPanel');
+    assert.equal(homeEl.querySelector('.ag-cs-home-panel'), null, 'Panel must not exist before Channel 12 arrives');
+    assert.equal(env.win.__agPrism.getState().hasPanel, false);
+    assert.ok(
+      bindingCalls.some((c) => c && c.action === 'request-home-studio-panel'),
+      'Channel 1 on .agy-home must request Channel 12 via __agPrismSetting'
+    );
+
+    // Channel 12 arrives -> mounts panel & updates greeting immediately
+    const mountRes = vm.runInNewContext(ch12Expr, env.win);
+    assert.equal(mountRes.ok, true);
+    assert.equal(mountRes.status, 'mounted');
+    assert.ok(env.win.__agHomeStudioPanel && env.win.__agHomeStudioPanel === env.win.__agPrismHomeStudioPanel);
+    assert.ok(homeEl.querySelector('.ag-cs-home-panel'), 'Home Studio panel must mount immediately upon Channel 12 arrival');
+    assert.equal(env.win.__agPrism.getState().hasPanel, true);
+    assert.equal(h1.textContent, "What's up next?");
+
+    // Repeated injection with identical hash -> idempotent reuse, single panel seat
+    const reuseRes = vm.runInNewContext(ch12Expr, env.win);
+    assert.equal(reuseRes.ok, true);
+    assert.equal(reuseRes.reused, true);
+    assert.equal(homeEl.querySelectorAll('.ag-cs-home-panel-seat').length, 1);
+
+    // Hot-swap with a newer codeHash -> disposes old controller (0 leaked timers, 1 panel seat)
+    const timersBeforeSwap = activeTimers.size;
+    const hotSwapExpr = ch12Expr.replace(/const targetHash = "([^"]+)"/, 'const targetHash = "hotswap999"');
+    const swapRes = vm.runInNewContext(hotSwapExpr, env.win);
+    assert.equal(swapRes.ok, true);
+    assert.equal(swapRes.status, 'mounted');
+    assert.equal(swapRes.codeHash, 'hotswap999');
+    assert.equal(homeEl.querySelectorAll('.ag-cs-home-panel-seat').length, 1, 'Hot-swap must replace old panel seat cleanly');
+    assert.ok(activeTimers.size <= timersBeforeSwap + 1, `Hot-swap must not leak timers (before=${timersBeforeSwap}, after=${activeTimers.size})`);
+
+    // Config refresh to homeLayout="classic" -> tears down panel, style, globals, and restores greeting
+    const chMatch = /"codeHash":"([^"]+)"/.exec(refExpr);
+    assert.ok(chMatch);
+    env.win.__agPrism.codeHash = chMatch[1];
+    const refRes = vm.runInNewContext(refExpr, env.win);
+    assert.equal(refRes.refreshed, true);
+    assert.equal(homeEl.querySelector('.ag-cs-home-panel'), null);
+    assert.equal(env.doc.getElementById('ag-prism-studio-v101-css'), null);
+    assert.equal(env.win.__agHomeStudioPanel, undefined);
+    assert.equal(env.win.__agPrismHomeStudioPanel, undefined);
+    assert.equal(h1.textContent, 'Welcome back');
+    env.win.__agPrism.destroy();
+  }
+
+  // 3b) Cold start on conversation page -> navigate back to .agy-home -> requests & mounts stably without race
+  {
+    const { env, homeEl, bindingCalls } = createHomeSandbox({ startOnHome: false });
+    const bootRes = vm.runInNewContext(cdp.buildInjectExpression({ ...cdp.DEFAULT_CONFIG, language: 'en', homeLayout: 'studio' }), env.win);
+    assert.equal(bootRes.status, 'ok');
+    assert.equal(bindingCalls.some((c) => c && c.action === 'request-home-studio-panel'), false, 'Conversation page must not eagerly request Ch12');
+
+    // User switches back to home page
+    env.body.appendChild(homeEl);
+    env.win.__agPrism.sync();
+    assert.ok(
+      bindingCalls.some((c) => c && c.action === 'request-home-studio-panel'),
+      'Navigating from chat back to .agy-home must request Channel 12'
+    );
+    const mountRes = vm.runInNewContext(ch12Expr, env.win);
+    assert.equal(mountRes.ok, true);
+    assert.ok(homeEl.querySelector('.ag-cs-home-panel'), 'Home panel must mount after route switch + Ch12 delivery');
+
+    // HOME_STUDIO_REMOVE_EXPRESSION cleans everything cleanly
+    const remRes = vm.runInNewContext(cdp.HOME_STUDIO_REMOVE_EXPRESSION, env.win);
+    assert.equal(remRes.status, 'off');
+    assert.equal(homeEl.querySelector('.ag-cs-home-panel'), null);
+    assert.equal(env.win.__agHomeStudioPanel, undefined);
+    assert.equal(env.win.__agPrismHomeStudioPanel, undefined);
+    env.win.__agPrism.destroy();
+  }
+
+  // 4) Daemon integration: handleBindingCall(request-home-studio-panel) & _syncHomeStudioOnEntry
+  {
+    const { PrismDaemon } = await import(pathToFileURL(path.join(ROOT, 'sidecars/daemon/main.mjs')).href);
+    const daemon = new PrismDaemon({ rootDir: ROOT, bundleCachePath: false, silent: true, enableAutoUpdateTimer: false });
+    const sent = [];
+    const entry = {
+      wsUrl: 'ws://127.0.0.1:9999/ch12',
+      pageId: 'ch12-page',
+      url: 'https://127.0.0.1:42000/',
+      title: 'Antigravity',
+      mainFrameId: 'main-frame',
+      contextFrames: new Map([[42, { frameId: 'main-frame', isDefault: true, type: 'default' }]]),
+      homeStudioScriptId: null,
+      homeStudioMounted: false,
+      lastHomeStudioSig: '',
+      lastHomeStudioScriptSig: '',
+      session: {
+        closed: false,
+        send: async (method, params) => {
+          sent.push({ method, params });
+          if (method === 'Page.addScriptToEvaluateOnNewDocument') return { identifier: 'hs-doc-1' };
+          if (method === 'Runtime.evaluate') return { result: { value: { ok: true, status: 'mounted' } } };
+          return {};
+        },
+        evaluate: async (expr) => {
+          sent.push({ method: 'evaluate', expr });
+          return { ok: true, status: 'mounted' };
+        },
+      },
+    };
+    await daemon.handleBindingCall(entry, {
+      name: cdp.SETTING_BINDING,
+      payload: JSON.stringify({ action: 'request-home-studio-panel' }),
+      executionContextId: 42,
+    });
+    assert.equal(entry.homeStudioScriptId, 'hs-doc-1', 'Daemon must register NewDocument script on request-home-studio-panel');
+    assert.equal(entry.homeStudioMounted, true, 'Daemon must evaluate Channel 12 and mark homeStudioMounted=true');
+    assert.ok(
+      sent.some((s) => s.method === 'Runtime.evaluate' && s.params.contextId === 42 && s.params.expression.includes('__agHomeStudioPanel')),
+      'Daemon must evaluate Channel 12 on the requesting main executionContextId'
+    );
+
+    // Switching homeLayout -> classic removes NewDocument script & evaluates cleanup expression
+    sent.length = 0;
+    await daemon._syncHomeStudioOnEntry(entry, { ...cdp.DEFAULT_CONFIG, homeLayout: 'classic' }, { runCleanup: true });
+    assert.equal(entry.homeStudioScriptId, null);
+    assert.equal(entry.homeStudioMounted, false);
+    assert.ok(sent.some((s) => s.method === 'Page.removeScriptToEvaluateOnNewDocument' && s.params.identifier === 'hs-doc-1'));
+    assert.ok(sent.some((s) => s.method === 'evaluate' && s.expr.includes('detachHomeStudio')));
+  }
+
+  // 5) Packaging parity across Windows/macOS/Linux builders (native-plugin/home-studio-panel.js included)
+  const buildCommon = await import(pathToFileURL(path.join(ROOT, 'scripts/build-common.mjs')).href);
+  const buildLinux = await import(pathToFileURL(path.join(ROOT, 'scripts/build-linux.mjs')).href);
+  const nativeEntries = buildCommon.collectNativePluginEntries(path.join(ROOT, 'config.example.json'));
+  assert.ok(
+    nativeEntries.some((e) => e.name === 'native-plugin/home-studio-panel.js'),
+    'Windows/macOS collectNativePluginEntries must bundle native-plugin/home-studio-panel.js'
+  );
+  const linuxEntries = buildLinux.collectLinuxPortableEntries();
+  assert.ok(
+    linuxEntries.some((e) => e.name === 'obsidian-prism-linux/native-plugin/home-studio-panel.js'),
+    'Linux collectLinuxPortableEntries must bundle obsidian-prism-linux/native-plugin/home-studio-panel.js'
   );
 });

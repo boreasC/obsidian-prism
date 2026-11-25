@@ -143,7 +143,7 @@ test('validateSafeRelativePath and validateAddonManifest block traversal, absolu
   }
 
   assert.equal(isValidSemver('1.0.8'), true);
-  assert.equal(isValidSemver('1.0.8-beta.1'), true);
+  assert.equal(isValidSemver('1.0.8-beta.2'), true);
   assert.equal(isValidSemver('1.0.8-'), false);
   assert.equal(isValidSemver('not-a-version'), false);
 
